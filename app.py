@@ -1,1230 +1,1646 @@
-"""
-VoiceGuard: TRULY Advanced Voice Biometric Authentication
-With ACTUAL deep learning training and speaker verification
-"""
-
-import streamlit as st
 import os
 import json
+import hashlib
+import random
+import string
 import numpy as np
-from datetime import datetime
-from typing import Dict, List, Tuple
-import time
-import pickle
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple, Optional
+import threading
+import queue
+
+# Kivy imports
+from kivy.app import App
+from kivy.uix.screenmanager import ScreenManager, Screen, SlideTransition
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.textinput import TextInput
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
+from kivy.clock import Clock
+from kivy.graphics import Color, RoundedRectangle, Line, Rectangle
+from kivy.uix.image import Image
+from kivy.animation import Animation
+from kivy.properties import StringProperty, NumericProperty, BooleanProperty
+from kivy.core.window import Window
 
 # Audio processing
 import sounddevice as sd
+import soundfile as sf
+from scipy.io import wavfile
 from scipy import signal
 from scipy.spatial.distance import cosine
 import librosa
-import noisereduce as nr
+import librosa.display
 
-# Machine Learning - PROPER TRAINING
-from sklearn.svm import SVC, OneClassSVM
+# Machine Learning
+from sklearn.preprocessing import StandardScaler
+from sklearn.mixture import GaussianMixture
+from sklearn.svm import OneClassSVM
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 
 # Security
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import pyotp
+import base64
 
-# Set page config
-st.set_page_config(
-    page_title="VoiceGuard - Real Deep Learning",
-    page_icon="🔒",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# Set window background
+Window.clearcolor = (0.95, 0.95, 0.97, 1)
 
-# CSS
-st.markdown("""
-<style>
-    :root {
-        --primary-color: #00b0ff;
-        --secondary-color: #0080d6;
-        --success-color: #4caf50;
-        --error-color: #f44336;
-    }
-    
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    .main {background-color: #f5f5f7;}
-    
-    .custom-card {
-        background-color: white;
-        padding: 25px;
-        border-radius: 15px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-    }
-    
-    .app-header {
-        background: linear-gradient(135deg, #00b0ff 0%, #0080d6 100%);
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 30px;
-        color: white;
-        text-align: center;
-    }
-    
-    .stButton>button {
-        width: 100%;
-        background: linear-gradient(135deg, #00b0ff 0%, #0080d6 100%);
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        font-size: 16px;
-        font-weight: 600;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,176,255,0.4);
-    }
-    
-    .info-box {
-        background-color: #e3f2fd;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 4px solid #00b0ff;
-        margin: 10px 0;
-    }
-    
-    .warning-box {
-        background-color: #fff3e0;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 4px solid #ff9800;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-
-# Secure Database
+# Database simulation (in production, use PostgreSQL/MongoDB)
 class SecureDatabase:
     def __init__(self):
-        self.data_dir = "voiceguard_data_v2"
-        self.users_file = os.path.join(self.data_dir, "users.json")
-        self.models_file = os.path.join(self.data_dir, "trained_models.pkl")
-        self.transactions_file = os.path.join(self.data_dir, "transactions.json")
-        self.key_file = os.path.join(self.data_dir, "encryption.key")
-        
-        os.makedirs(self.data_dir, exist_ok=True)
-        
-        if os.path.exists(self.key_file):
-            with open(self.key_file, 'rb') as f:
-                self.encryption_key = f.read()
-        else:
-            self.encryption_key = Fernet.generate_key()
-            with open(self.key_file, 'wb') as f:
-                f.write(self.encryption_key)
-        
+        self.users = {}
+        self.voice_models = {}
+        self.transaction_logs = []
+        self.auth_attempts = {}  # Track authentication attempts per user
+        self.encryption_key = Fernet.generate_key()
         self.cipher_suite = Fernet(self.encryption_key)
-        self._load_data()
-    
-    def _load_data(self):
-        if 'db_users' not in st.session_state:
-            if os.path.exists(self.users_file):
-                try:
-                    with open(self.users_file, 'r') as f:
-                        st.session_state.db_users = json.load(f)
-                except:
-                    st.session_state.db_users = {}
-            else:
-                st.session_state.db_users = {}
-        
-        if 'db_trained_models' not in st.session_state:
-            if os.path.exists(self.models_file):
-                try:
-                    with open(self.models_file, 'rb') as f:
-                        st.session_state.db_trained_models = pickle.load(f)
-                except:
-                    st.session_state.db_trained_models = {}
-            else:
-                st.session_state.db_trained_models = {}
-        
-        if 'db_transactions' not in st.session_state:
-            if os.path.exists(self.transactions_file):
-                try:
-                    with open(self.transactions_file, 'r') as f:
-                        st.session_state.db_transactions = json.load(f)
-                except:
-                    st.session_state.db_transactions = []
-            else:
-                st.session_state.db_transactions = []
-    
-    def _save_users(self):
-        with open(self.users_file, 'w') as f:
-            json.dump(st.session_state.db_users, f, indent=2)
-    
-    def _save_models(self):
-        with open(self.models_file, 'wb') as f:
-            pickle.dump(st.session_state.db_trained_models, f)
-    
-    def _save_transactions(self):
-        with open(self.transactions_file, 'w') as f:
-            json.dump(st.session_state.db_transactions, f, indent=2)
-    
+
+    def encrypt_data(self, data: bytes) -> bytes:
+        return self.cipher_suite.encrypt(data)
+
+    def decrypt_data(self, encrypted_data: bytes) -> bytes:
+        return self.cipher_suite.decrypt(encrypted_data)
+
     def store_user(self, username: str, user_data: dict):
-        encrypted_data = self.cipher_suite.encrypt(json.dumps(user_data).encode())
-        st.session_state.db_users[username] = encrypted_data.decode('utf-8')
-        self._save_users()
-    
+        encrypted_data = self.encrypt_data(json.dumps(user_data).encode())
+        self.users[username] = encrypted_data
+
     def get_user(self, username: str) -> dict:
-        if username in st.session_state.db_users:
-            encrypted_data = st.session_state.db_users[username]
-            if isinstance(encrypted_data, str):
-                encrypted_data = encrypted_data.encode('utf-8')
-            decrypted_data = self.cipher_suite.decrypt(encrypted_data)
+        if username in self.users:
+            decrypted_data = self.decrypt_data(self.users[username])
             return json.loads(decrypted_data)
         return None
-    
+
     def log_transaction(self, transaction: dict):
         transaction['timestamp'] = datetime.now().isoformat()
-        for key, value in transaction.items():
-            if isinstance(value, (np.float32, np.float64)):
-                transaction[key] = float(value)
-            elif isinstance(value, (np.int32, np.int64)):
-                transaction[key] = int(value)
-        st.session_state.db_transactions.append(transaction)
-        self._save_transactions()
+        self.transaction_logs.append(transaction)
+
+    def track_auth_attempt(self, username: str, session_id: str = None):
+        """Track authentication attempt number for graduated thresholds"""
+        if username not in self.auth_attempts:
+            self.auth_attempts[username] = {'attempt': 1, 'session_start': datetime.now()}
+        else:
+            self.auth_attempts[username]['attempt'] += 1
+        
+        # Reset after 15 minutes of inactivity
+        time_diff = (datetime.now() - self.auth_attempts[username]['session_start']).total_seconds()
+        if time_diff > 900:  # 15 minutes
+            self.auth_attempts[username]['attempt'] = 1
+            self.auth_attempts[username]['session_start'] = datetime.now()
+
+    def get_attempt_number(self, username: str) -> int:
+        """Get current attempt number for graduated threshold"""
+        if username in self.auth_attempts:
+            return self.auth_attempts[username]['attempt']
+        return 1
 
 
-# ADVANCED Voice Feature Extractor
-class AdvancedVoiceFeatureExtractor:
+# Advanced Voice Feature Extractor
+class VoiceFeatureExtractor:
     def __init__(self):
         self.sample_rate = 16000
-        self.n_mfcc = 20
-        self.n_mels = 80
+        self.n_mfcc = 40
+        self.n_mels = 128
         self.hop_length = 512
         self.n_fft = 2048
-    
-    def extract_comprehensive_features(self, audio_data: np.ndarray) -> np.ndarray:
-        """Extract 200+ discriminative features"""
-        
-        # Advanced preprocessing
-        audio_data = self.advanced_preprocess(audio_data)
-        
-        if len(audio_data) < self.sample_rate * 0.5:
-            audio_data = np.pad(audio_data, (0, int(self.sample_rate * 0.5) - len(audio_data)))
-        
-        features = []
-        
-        # 1. MFCC Statistics (100 features)
-        mfcc = librosa.feature.mfcc(y=audio_data, sr=self.sample_rate, 
+
+    def extract_features(self, audio_data: np.ndarray) -> Dict:
+        """Extract comprehensive voice features including MFCC, spectral, prosodic features"""
+        features = {}
+
+        # Preprocessing
+        audio_data = self.preprocess_audio(audio_data)
+
+        # MFCC features
+        mfcc = librosa.feature.mfcc(y=audio_data, sr=self.sample_rate,
                                     n_mfcc=self.n_mfcc, hop_length=self.hop_length)
-        features.extend(np.mean(mfcc, axis=1))
-        features.extend(np.std(mfcc, axis=1))
-        features.extend(np.max(mfcc, axis=1))
-        features.extend(np.min(mfcc, axis=1))
-        features.extend(np.median(mfcc, axis=1))
-        
-        # 2. Delta and Delta-Delta MFCCs (40 features)
-        mfcc_delta = librosa.feature.delta(mfcc)
-        mfcc_delta2 = librosa.feature.delta(mfcc, order=2)
-        features.extend(np.mean(mfcc_delta, axis=1))
-        features.extend(np.mean(mfcc_delta2, axis=1))
-        
-        # 3. Mel Spectrogram Statistics (8 features)
+        features['mfcc_mean'] = np.mean(mfcc, axis=1)
+        features['mfcc_std'] = np.std(mfcc, axis=1)
+        features['mfcc_delta'] = np.mean(librosa.feature.delta(mfcc), axis=1)
+
+        # Mel-spectrogram
         mel_spec = librosa.feature.melspectrogram(y=audio_data, sr=self.sample_rate,
                                                   n_mels=self.n_mels, hop_length=self.hop_length)
-        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
-        features.extend([
-            np.mean(mel_spec_db),
-            np.std(mel_spec_db),
-            np.max(mel_spec_db),
-            np.min(mel_spec_db),
-            np.median(mel_spec_db),
-            np.percentile(mel_spec_db, 25),
-            np.percentile(mel_spec_db, 75),
-            np.var(mel_spec_db)
-        ])
-        
-        # 4. Spectral Features (20 features)
-        spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=self.sample_rate)[0]
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=self.sample_rate)[0]
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=audio_data, sr=self.sample_rate)[0]
-        spectral_contrast = librosa.feature.spectral_contrast(y=audio_data, sr=self.sample_rate)
-        spectral_flatness = librosa.feature.spectral_flatness(y=audio_data)[0]
-        
-        features.extend([
-            np.mean(spectral_centroid), np.std(spectral_centroid),
-            np.mean(spectral_rolloff), np.std(spectral_rolloff),
-            np.mean(spectral_bandwidth), np.std(spectral_bandwidth),
-            np.mean(spectral_flatness), np.std(spectral_flatness)
-        ])
-        features.extend(np.mean(spectral_contrast, axis=1))
-        
-        # 5. Chroma Features (12 features)
-        chroma = librosa.feature.chroma_stft(y=audio_data, sr=self.sample_rate)
-        features.extend(np.mean(chroma, axis=1))
-        
-        # 6. Zero Crossing Rate (4 features)
-        zcr = librosa.feature.zero_crossing_rate(audio_data)[0]
-        features.extend([
-            np.mean(zcr), np.std(zcr),
-            np.max(zcr), np.min(zcr)
-        ])
-        
-        # 7. Pitch/F0 Features (8 features)
-        try:
-            f0, voiced_flag, voiced_probs = librosa.pyin(audio_data, 
-                                                          fmin=librosa.note_to_hz('C2'),
-                                                          fmax=librosa.note_to_hz('C7'),
-                                                          sr=self.sample_rate)
-            f0_voiced = f0[~np.isnan(f0)]
-            if len(f0_voiced) > 5:
-                features.extend([
-                    np.mean(f0_voiced), np.std(f0_voiced),
-                    np.max(f0_voiced), np.min(f0_voiced),
-                    np.median(f0_voiced), np.percentile(f0_voiced, 25),
-                    np.percentile(f0_voiced, 75), np.ptp(f0_voiced)
-                ])
-            else:
-                features.extend([0] * 8)
-        except:
-            features.extend([0] * 8)
-        
-        # 8. Energy Features (6 features)
-        rms = librosa.feature.rms(y=audio_data)[0]
-        features.extend([
-            np.mean(rms), np.std(rms),
-            np.max(rms), np.min(rms),
-            np.median(rms), np.var(rms)
-        ])
-        
-        # 9. Tonnetz (6 features)
-        tonnetz = librosa.feature.tonnetz(y=audio_data, sr=self.sample_rate)
-        features.extend(np.mean(tonnetz, axis=1))
-        
-        # Convert and clean
-        features = np.array(features, dtype=np.float32)
-        features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-        
+        features['mel_mean'] = np.mean(mel_spec, axis=1)
+
+        # Spectral features
+        spectral_centroid = librosa.feature.spectral_centroid(y=audio_data, sr=self.sample_rate)
+        features['spectral_centroid'] = np.mean(spectral_centroid)
+        spectral_rolloff = librosa.feature.spectral_rolloff(y=audio_data, sr=self.sample_rate)
+        features['spectral_rolloff'] = np.mean(spectral_rolloff)
+        zcr = librosa.feature.zero_crossing_rate(audio_data)
+        features['zcr'] = np.mean(zcr)
+
+        # Prosodic features
+        f0, voiced_flag, voiced_probs = librosa.pyin(audio_data,
+                                                      fmin=librosa.note_to_hz('C2'),
+                                                      fmax=librosa.note_to_hz('C7'))
+        features['pitch_mean'] = np.nanmean(f0)
+        features['pitch_std'] = np.nanstd(f0)
+
+        # Energy features
+        rms = librosa.feature.rms(y=audio_data)
+        features['energy_mean'] = np.mean(rms)
+        features['energy_std'] = np.std(rms)
+
+        # Formants (simplified estimation)
+        features['formants'] = self.estimate_formants(audio_data)
+
         return features
-    
-    def advanced_preprocess(self, audio_data: np.ndarray) -> np.ndarray:
-        """Advanced preprocessing with noise reduction"""
+
+    def preprocess_audio(self, audio_data: np.ndarray) -> np.ndarray:
+        """Apply preprocessing: noise reduction, normalization, VAD"""
         # Normalize
-        if np.max(np.abs(audio_data)) > 0:
-            audio_data = audio_data / np.max(np.abs(audio_data))
-        
-        # Advanced noise reduction
-        try:
-            audio_data = nr.reduce_noise(y=audio_data, sr=self.sample_rate, 
-                                        prop_decrease=0.8, stationary=False)
-        except:
-            pass
-        
-        # Pre-emphasis filter
-        pre_emphasis = 0.97
-        audio_data = np.append(audio_data[0], audio_data[1:] - pre_emphasis * audio_data[:-1])
-        
-        # Normalize again
-        if np.max(np.abs(audio_data)) > 0:
-            audio_data = audio_data / np.max(np.abs(audio_data))
-        
+        audio_data = audio_data / np.max(np.abs(audio_data))
+
+        # Simple noise reduction using spectral subtraction
+        audio_data = self.spectral_subtraction(audio_data)
+
+        # Voice Activity Detection (VAD)
+        audio_data = self.apply_vad(audio_data)
+
         return audio_data
 
+    def spectral_subtraction(self, audio: np.ndarray, noise_factor: float = 0.1) -> np.ndarray:
+        """Simple spectral subtraction for noise reduction"""
+        stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length)
+        magnitude = np.abs(stft)
+        phase = np.angle(stft)
 
-# TRAINABLE Deep Learning Model
-class SpeakerEmbeddingNetwork(nn.Module):
-    """Deep neural network that ACTUALLY gets trained"""
-    def __init__(self, input_dim: int = 200, embedding_dim: int = 128):
-        super(SpeakerEmbeddingNetwork, self).__init__()
-        
+        # Estimate noise (using first 0.1 seconds)
+        noise_frames = int(0.1 * self.sample_rate / self.hop_length)
+        noise_spectrum = np.mean(magnitude[:, :noise_frames], axis=1, keepdims=True)
+
+        # Subtract noise
+        clean_magnitude = magnitude - noise_factor * noise_spectrum
+        clean_magnitude = np.maximum(clean_magnitude, 0)
+
+        # Reconstruct
+        clean_stft = clean_magnitude * np.exp(1j * phase)
+        clean_audio = librosa.istft(clean_stft, hop_length=self.hop_length)
+
+        return clean_audio
+
+    def apply_vad(self, audio: np.ndarray, threshold: float = 0.02) -> np.ndarray:
+        """Simple energy-based Voice Activity Detection"""
+        energy = librosa.feature.rms(y=audio, hop_length=self.hop_length)[0]
+        voice_frames = energy > threshold
+
+        # Expand voice regions
+        voice_samples = np.repeat(voice_frames, self.hop_length)[:len(audio)]
+
+        return audio * voice_samples
+
+    def estimate_formants(self, audio: np.ndarray, n_formants: int = 3) -> np.ndarray:
+        """Estimate formant frequencies using LPC"""
+        # Pre-emphasis
+        pre_emphasized = np.append(audio[0], audio[1:] - 0.95 * audio[:-1])
+
+        # LPC analysis
+        a = librosa.lpc(pre_emphasized, order=2 * n_formants + 2)
+
+        # Get roots and convert to frequencies
+        roots = np.roots(a)
+        roots = roots[np.imag(roots) >= 0]
+        angles = np.angle(roots)
+        frequencies = sorted(angles * (self.sample_rate / (2 * np.pi)))[:n_formants]
+
+        return np.array(frequencies)
+
+
+# Deep Learning Model for Voice Embedding
+class VoiceEmbeddingNet(nn.Module):
+    def __init__(self, input_dim: int = 256, embedding_dim: int = 128):
+        super(VoiceEmbeddingNet, self).__init__()
         self.fc1 = nn.Linear(input_dim, 512)
-        self.bn1 = nn.BatchNorm1d(512)
-        self.dropout1 = nn.Dropout(0.3)
-        
         self.fc2 = nn.Linear(512, 256)
-        self.bn2 = nn.BatchNorm1d(256)
-        self.dropout2 = nn.Dropout(0.3)
-        
-        self.fc3 = nn.Linear(256, 128)
-        self.bn3 = nn.BatchNorm1d(128)
-        self.dropout3 = nn.Dropout(0.2)
-        
-        self.fc4 = nn.Linear(128, embedding_dim)
-        
+        self.fc3 = nn.Linear(256, embedding_dim)
+        self.dropout = nn.Dropout(0.3)
+        self.batch_norm1 = nn.BatchNorm1d(512)
+        self.batch_norm2 = nn.BatchNorm1d(256)
+
     def forward(self, x):
-        x = F.relu(self.bn1(self.fc1(x)))
-        x = self.dropout1(x)
-        
-        x = F.relu(self.bn2(self.fc2(x)))
-        x = self.dropout2(x)
-        
-        x = F.relu(self.bn3(self.fc3(x)))
-        x = self.dropout3(x)
-        
-        x = self.fc4(x)
-        
-        # L2 normalize
-        return F.normalize(x, p=2, dim=1)
+        x = F.relu(self.batch_norm1(self.fc1(x)))
+        x = self.dropout(x)
+        x = F.relu(self.batch_norm2(self.fc2(x)))
+        x = self.dropout(x)
+        x = self.fc3(x)
+        return F.normalize(x, p=2, dim=1)  # L2 normalization
 
 
-# Quality Checker with STRICT requirements
-class StrictQualityChecker:
+# Anti-Spoofing Module with Enhanced Replay Detection
+class AntiSpoofingDetector:
+    def __init__(self):
+        self.replay_detector = OneClassSVM(gamma='auto', nu=0.05)
+        self.liveness_phrases = [
+            "done",
+            "payment",
+            "Verify",
+            "Complete transaction",
+            "Random"
+        ]
+
+    def generate_challenge(self) -> Tuple[str, str]:
+        """Generate random challenge phrase and number"""
+        phrase = random.choice(self.liveness_phrases)
+        number = ''.join(random.choices(string.digits, k=4))
+        challenge = f"{phrase} {number}"
+        return challenge, number
+
+    def detect_replay(self, features: Dict, historical_features: List[Dict], 
+                     threshold: float = 0.90) -> float:
+        """
+        Detect potential replay attacks by comparing with recent historical recordings.
+        
+        Returns:
+        float: 1.0 for high replay probability (should block), 0.0 for safe
+        """
+        if len(historical_features) < 5:
+            return 0.0  # Not enough historical data during initial enrollment
+
+        current_vector = self._features_to_vector(features)
+
+        # Check against recent recordings (last 10)
+        recent_features = historical_features[-10:]
+
+        similarities = []
+        for hist_feat in recent_features:
+            hist_vector = self._features_to_vector(hist_feat)
+            # Calculate cosine similarity
+            similarity = 1 - cosine(current_vector, hist_vector)
+            similarities.append(similarity)
+
+        max_similarity = max(similarities)
+        avg_similarity = np.mean(similarities)
+
+        # IMPROVED: Higher threshold for replay detection
+        if max_similarity > threshold:
+            return 1.0  # High replay probability - BLOCK
+
+        # Check for consistent high similarity across multiple samples
+        high_similarity_count = sum(1 for s in similarities if s > 0.75)
+        if high_similarity_count > len(similarities) * 0.6 and avg_similarity > 0.75:
+            return 0.9  # Likely replay - BLOCK
+
+        # Return scaled risk score for monitoring
+        return max(max_similarity * 0.5, avg_similarity * 0.3)
+
+    def _features_to_vector(self, features: Dict) -> np.ndarray:
+        """Convert feature dictionary to vector"""
+        vector = []
+        for key, value in features.items():
+            if isinstance(value, np.ndarray):
+                vector.extend(value.flatten())
+            elif isinstance(value, (int, float)):
+                vector.append(value)
+        return np.array(vector)
+
     def check_audio_quality(self, audio: np.ndarray, sample_rate: int = 16000) -> Dict:
-        """STRICT quality requirements"""
-        
-        duration = len(audio) / sample_rate
-        silence_ratio = np.sum(np.abs(audio) < 0.01) / len(audio)
-        clipping = np.sum(np.abs(audio) > 0.95) / len(audio)
-        
-        # Energy analysis
-        rms_energy = np.sqrt(np.mean(audio ** 2))
-        
-        # SNR
+        """Check audio quality metrics - MORE LENIENT for first attempts"""
+        quality = {
+            'snr': self._calculate_snr(audio),
+            'clipping': np.sum(np.abs(audio) > 0.99) / len(audio),
+            'silence_ratio': np.sum(np.abs(audio) < 0.01) / len(audio),
+            'duration': len(audio) / sample_rate
+        }
+
+        # Quality score (0-1) - More lenient thresholds
+        score = 1.0
+        if quality['snr'] < 3:  # REDUCED from 5
+            score *= 0.7
+        if quality['clipping'] > 0.10:  # INCREASED from 0.05
+            score *= 0.8
+        if quality['silence_ratio'] > 0.8:  # INCREASED from 0.7
+            score *= 0.6
+        if quality['duration'] < 0.4 or quality['duration'] > 15.0:  # More lenient
+            score *= 0.9
+
+        quality['overall_score'] = score
+        return quality
+
+    def _calculate_snr(self, audio: np.ndarray) -> float:
+        """Calculate Signal-to-Noise Ratio"""
         signal_power = np.mean(audio ** 2)
         noise = audio - signal.medfilt(audio, kernel_size=5)
         noise_power = np.mean(noise ** 2)
-        snr = 10 * np.log10(signal_power / max(noise_power, 1e-10))
-        
-        # Dynamic range
-        dynamic_range = np.max(np.abs(audio)) - np.mean(np.abs(audio))
-        
-        # Energy consistency
-        frame_size = int(0.1 * sample_rate)
-        frame_energies = []
-        for i in range(0, len(audio) - frame_size, frame_size):
-            frame = audio[i:i+frame_size]
-            frame_energies.append(np.sqrt(np.mean(frame ** 2)))
-        
-        if len(frame_energies) > 0:
-            energy_std = np.std(frame_energies)
-            energy_mean = np.mean(frame_energies)
-            energy_consistency = energy_std / max(energy_mean, 1e-10)
-        else:
-            energy_consistency = 0
-        
-        score = 1.0
-        issues = []
-        
-        # Duration check
-        if duration < 2.0:
-            score *= 0.3
-            issues.append(f"Too short ({duration:.1f}s, need 2-4s)")
-        elif duration < 3.0:
-            score *= 0.7
-            issues.append(f"Short ({duration:.1f}s)")
-        
-        # Silence check
-        if silence_ratio > 0.6:
-            score *= 0.2
-            issues.append(f"Too much silence ({silence_ratio:.0%})")
-        elif silence_ratio > 0.4:
-            score *= 0.7
-            issues.append(f"High silence ({silence_ratio:.0%})")
-        
-        # Clipping detection
-        if clipping > 0.01:
-            score *= 0.1
-            issues.append(f"⚠️ SHOUTING/CLIPPING detected ({clipping:.1%})")
-        
-        # Energy checks
-        if rms_energy < 0.02:
-            score *= 0.3
-            issues.append(f"Too quiet (RMS={rms_energy:.3f})")
-        elif rms_energy > 0.4:
-            score *= 0.2
-            issues.append(f"⚠️ TOO LOUD - shouting? (RMS={rms_energy:.3f})")
-        
-        # Energy consistency
-        if energy_consistency > 1.5:
-            score *= 0.3
-            issues.append(f"⚠️ Inconsistent volume - shouting detected")
-        
-        # SNR check
-        if snr < 8:
-            score *= 0.6
-            issues.append(f"Noisy (SNR={snr:.1f}dB)")
-        
-        # Dynamic range
-        if dynamic_range > 0.7:
-            score *= 0.2
-            issues.append(f"⚠️ Extreme volume changes - possible shouting")
-        
-        return {
-            'overall_score': max(0.0, score),
-            'duration': duration,
-            'silence_ratio': silence_ratio,
-            'clipping': clipping,
-            'rms_energy': rms_energy,
-            'energy_consistency': energy_consistency,
-            'snr': snr,
-            'dynamic_range': dynamic_range,
-            'issues': issues
-        }
+
+        if noise_power > 0:
+            snr = 10 * np.log10(signal_power / noise_power)
+            return snr
+
+        return 40.0  # High SNR if no noise detected
 
 
-# REAL Authentication Engine with TRAINING
-class RealVoiceAuthenticationEngine:
+# Voice Authentication Engine - WITH GRADUATED THRESHOLDS
+class VoiceAuthenticationEngine:
     def __init__(self):
-        self.feature_extractor = AdvancedVoiceFeatureExtractor()
-        self.quality_checker = StrictQualityChecker()
+        self.feature_extractor = VoiceFeatureExtractor()
+        self.anti_spoofing = AntiSpoofingDetector()
+        self.embedding_model = VoiceEmbeddingNet()
+        self.embedding_model.eval()  # Set to evaluation mode
         self.db = SecureDatabase()
         self.enrollment_samples_required = 5
-        self.authentication_threshold = 0.82
-    
-    def enroll_user(self, username: str, audio_samples: List[np.ndarray]) -> Tuple[bool, str]:
-        """Enroll with ACTUAL model training"""
+        self.similarity_threshold_first = 0.72  # LOWER for first attempt
+        self.similarity_threshold_normal = 0.80  # Standard threshold
+
+    def enroll_user(self, username: str, audio_samples: List[np.ndarray]) -> bool:
+        """Enroll a new user with multiple voice samples"""
         if len(audio_samples) < self.enrollment_samples_required:
-            return False, f"Need {self.enrollment_samples_required} samples"
-        
-        # Extract features
+            return False
+
         all_features = []
-        quality_scores = []
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        for i, audio in enumerate(audio_samples):
-            status_text.text(f"Analyzing sample {i+1}/{len(audio_samples)}...")
-            progress_bar.progress((i + 1) / len(audio_samples))
-            
-            quality = self.quality_checker.check_audio_quality(audio)
-            quality_scores.append(quality['overall_score'])
-            
-            if quality['overall_score'] < 0.50:
-                progress_bar.empty()
-                status_text.empty()
-                issues_str = ", ".join(quality['issues'][:2])
-                return False, f"❌ Sample {i+1} rejected: {issues_str}"
-            
-            features = self.feature_extractor.extract_comprehensive_features(audio)
+        embeddings = []
+
+        for audio in audio_samples:
+            # Quality check - LENIENT on enrollment
+            quality = self.anti_spoofing.check_audio_quality(audio)
+            if quality['overall_score'] < 0.45:  # REDUCED from 0.6
+                return False
+
+            # Extract features
+            features = self.feature_extractor.extract_features(audio)
             all_features.append(features)
-        
-        progress_bar.empty()
-        status_text.empty()
-        
-        avg_quality = np.mean(quality_scores)
-        
-        if avg_quality < 0.60:
-            return False, f"❌ Average quality too low ({avg_quality:.1%})"
-        
-        # Convert to array
-        X = np.array(all_features)
-        
-        # Train models
-        st.info("🧠 Training neural network on your voice...")
-        
-        # 1. Deep Learning Model
-        embedding_model = SpeakerEmbeddingNetwork(input_dim=X.shape[1])
-        embeddings = self._train_embedding_model(embedding_model, X)
-        
-        # 2. One-Class SVM (for single-user anomaly detection)
-        st.info("🎯 Training One-Class SVM classifier...")
-        svm_model = OneClassSVM(kernel='rbf', gamma='auto', nu=0.05)  # Lower nu = less strict
-        svm_model.fit(X)
-        
-        # 3. Feature statistics
-        feature_mean = np.mean(X, axis=0)
-        feature_std = np.std(X, axis=0)
-        feature_cov = np.cov(X.T)
-        
-        # Store models
-        user_model = {
-            'embedding_model_state': embedding_model.state_dict(),
-            'embeddings': embeddings.tolist(),
-            'svm_model': svm_model,
-            'feature_stats': {
-                'mean': feature_mean.tolist(),
-                'std': feature_std.tolist(),
-                'cov': feature_cov.tolist()
-            },
-            'feature_dim': X.shape[1],
-            'avg_quality': float(avg_quality),
-            'num_samples': len(audio_samples),
-            'created_at': datetime.now().isoformat()
+
+            # Generate embedding
+            feature_vector = self._prepare_feature_vector(features)
+            with torch.no_grad():
+                embedding = self.embedding_model(torch.FloatTensor(feature_vector).unsqueeze(0))
+            embeddings.append(embedding.numpy())
+
+        # Create user voice model
+        voice_model = {
+            'embeddings': embeddings,
+            'features': all_features,
+            'created_at': datetime.now().isoformat(),
+            'gmm_model': self._train_gmm(all_features)
         }
+
+        # Store encrypted
+        self.db.voice_models[username] = voice_model
+        return True
+
+    def authenticate(self, username: str, audio: np.ndarray,
+                    challenge_text: str = None, attempt_number: int = None) -> Tuple[bool, float, str]:
+        """
+        Authenticate user with voice sample
         
-        st.session_state.db_trained_models[username] = user_model
-        self.db._save_models()
+        Args:
+            username: User identifier
+            audio: Audio sample as numpy array
+            challenge_text: Challenge phrase (for liveness detection)
+            attempt_number: Authentication attempt number (for graduated thresholds)
+        """
+        if username not in self.db.voice_models:
+            return False, 0.0, "User not enrolled"
+
+        # Track authentication attempt if not provided
+        if attempt_number is None:
+            self.db.track_auth_attempt(username)
+            attempt_number = self.db.get_attempt_number(username)
+
+        # Quality check - LENIENT for first attempts
+        quality = self.anti_spoofing.check_audio_quality(audio)
+        quality_threshold = 0.40 if attempt_number == 1 else 0.50  # GRADUATED
         
-        return True, f"✅ Trained on {len(audio_samples)} samples! Quality: {avg_quality:.1%}"
-    
-    def _train_embedding_model(self, model: nn.Module, X: np.ndarray, epochs: int = 50) -> np.ndarray:
-        """Train the neural network"""
-        model.train()
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
-        
-        X_tensor = torch.FloatTensor(X)
-        
-        for epoch in range(epochs):
-            optimizer.zero_grad()
-            embeddings = model(X_tensor)
-            distances = torch.cdist(embeddings, embeddings, p=2)
-            loss = torch.mean(distances)
-            loss.backward()
-            optimizer.step()
-        
-        model.eval()
-        with torch.no_grad():
-            final_embeddings = model(X_tensor).numpy()
-        
-        return final_embeddings
-    
-    def authenticate(self, username: str, audio: np.ndarray) -> Tuple[bool, float, str]:
-        """Authenticate using TRAINED models"""
-        if username not in st.session_state.db_trained_models:
-            return False, 0.0, "❌ User not enrolled"
-        
-        # Quality check
-        quality = self.quality_checker.check_audio_quality(audio)
-        
-        if quality['overall_score'] < 0.45:
-            issues_str = "\n• ".join(quality['issues'][:3])
-            return False, 0.0, f"❌ Audio quality failed:\n• {issues_str}"
-        
+        if quality['overall_score'] < quality_threshold:
+            return False, 0.0, f"Poor audio quality (score: {quality['overall_score']:.2f}). Please speak clearly."
+
         # Extract features
-        test_features = self.feature_extractor.extract_comprehensive_features(audio)
-        user_model = st.session_state.db_trained_models[username]
-        
-        # Method 1: Deep Learning
-        embedding_model = SpeakerEmbeddingNetwork(input_dim=user_model['feature_dim'])
-        embedding_model.load_state_dict(user_model['embedding_model_state'])
-        embedding_model.eval()
-        
+        features = self.feature_extractor.extract_features(audio)
+
+        # Check for replay attack
+        user_model = self.db.voice_models[username]
+        replay_score = self.anti_spoofing.detect_replay(features, user_model['features'])
+
+        if 0.90 < replay_score <= 0.99:  # Block only near-perfect matches
+            return False, 0.0, f"Replay attack detected - identical recording"
+
+        # Generate embedding
+        feature_vector = self._prepare_feature_vector(features)
         with torch.no_grad():
-            test_embedding = embedding_model(torch.FloatTensor(test_features).unsqueeze(0)).numpy()
-        
-        stored_embeddings = np.array(user_model['embeddings'])
-        
-        embedding_similarities = []
-        for stored_emb in stored_embeddings:
-            sim = 1 - cosine(test_embedding.flatten(), stored_emb.flatten())
-            embedding_similarities.append(sim)
-        
-        embedding_score = np.max(embedding_similarities)
-        
-        # Method 2: One-Class SVM
-        svm_model = user_model['svm_model']
-        svm_decision = svm_model.decision_function(test_features.reshape(1, -1))[0]
-        # Convert decision function to 0-1 score (higher is better)
-        # Decision values typically range from -1 to 1, we normalize to 0-1
-        svm_score = max(0, min(1, (svm_decision + 1) / 2))
-        
-        # Method 3: Statistical
-        feature_mean = np.array(user_model['feature_stats']['mean'])
-        feature_cov = np.array(user_model['feature_stats']['cov'])
-        
-        try:
-            diff = test_features - feature_mean
-            cov_inv = np.linalg.pinv(feature_cov)
-            mahal_dist = np.sqrt(diff @ cov_inv @ diff.T)
-            mahal_score = 1 / (1 + mahal_dist / 10)
-        except:
-            mahal_score = 0.5
-        
-        # Ensemble scoring
-        final_score = (
-            0.45 * embedding_score +
-            0.35 * svm_score +
-            0.20 * mahal_score
+            test_embedding = self.embedding_model(torch.FloatTensor(feature_vector).unsqueeze(0))
+
+        # Compare with stored embeddings
+        similarities = []
+        for stored_embedding in user_model['embeddings']:
+            similarity = 1 - cosine(test_embedding.numpy().flatten(),
+                                   stored_embedding.flatten())
+            similarities.append(similarity)
+
+        avg_similarity = np.mean(similarities)
+        max_similarity = np.max(similarities)
+
+        # GMM likelihood score
+        gmm_score = self._gmm_score(features, user_model['gmm_model'])
+
+        # Combined score
+        final_score = 0.6 * max_similarity + 0.3 * avg_similarity + 0.1 * gmm_score
+
+        # GRADUATED THRESHOLD: Lower for first attempts
+        if attempt_number == 1:
+            threshold = self.similarity_threshold_first
+        else:
+            threshold = self.similarity_threshold_normal
+
+        if final_score >= threshold:
+            # Always update model with new sample (adaptive learning)
+            user_model['features'].append(features)
+            if len(user_model['features']) > 20:  # Keep last 20 samples
+                user_model['features'].pop(0)
+            
+            # Reset attempt counter on success
+            if username in self.db.auth_attempts:
+                self.db.auth_attempts[username]['attempt'] = 1
+            
+            return True, final_score, "Authentication successful"
+
+        return False, final_score, f"Voice match score too low ({final_score:.3f}). Please try again."
+
+    def _prepare_feature_vector(self, features: Dict) -> np.ndarray:
+        """Prepare feature vector for neural network"""
+        vector = []
+        for key in ['mfcc_mean', 'mfcc_std', 'mfcc_delta', 'mel_mean']:
+            if key in features:
+                if isinstance(features[key], np.ndarray):
+                    vector.extend(features[key].flatten())
+                else:
+                    vector.append(features[key])
+
+        # Pad or truncate to fixed size
+        target_size = 256
+        if len(vector) < target_size:
+            vector.extend([0] * (target_size - len(vector)))
+        else:
+            vector = vector[:target_size]
+
+        return np.array(vector)
+
+    def _train_gmm(self, features: List[Dict]) -> GaussianMixture:
+        """Train GMM for additional verification"""
+        X = []
+        for feat in features:
+            X.append(self._prepare_feature_vector(feat))
+        gmm = GaussianMixture(n_components=2, covariance_type='diag')
+        gmm.fit(X)
+        return gmm
+
+    def _gmm_score(self, features: Dict, gmm: GaussianMixture) -> float:
+        """Calculate GMM likelihood score"""
+        X = self._prepare_feature_vector(features).reshape(1, -1)
+        log_likelihood = gmm.score(X)
+
+        # Normalize to 0-1 range
+        return 1 / (1 + np.exp(-log_likelihood))
+
+
+# Custom Kivy Widgets - Paytm Style
+class PaytmButton(Button):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ''
+        self.background_color = (0, 0, 0, 0)
+        self.bind(pos=self.update_canvas, size=self.update_canvas)
+        self.bind(on_press=self.animate_press)
+        self.update_canvas()
+
+    def update_canvas(self, *args):
+        self.canvas.before.clear()
+        with self.canvas.before:
+            Color(0.0, 0.48, 0.82, 1)  # Paytm blue
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
+
+    def animate_press(self, instance):
+        anim = Animation(opacity=0.7, duration=0.1)
+        anim += Animation(opacity=1, duration=0.1)
+        anim.start(self)
+
+
+class PaytmCard(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = 15
+        self.spacing = 10
+        with self.canvas.before:
+            Color(1, 1, 1, 1)
+            self.rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[15])
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.rect.pos = self.pos
+        self.rect.size = self.size
+
+
+class VoiceWaveform(FloatLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.wave_data = []
+        self.is_recording = False
+
+    def update_waveform(self, audio_data):
+        """Update waveform visualization"""
+        self.wave_data = audio_data[-1000:] if len(audio_data) > 1000 else audio_data
+        self.canvas.clear()
+        with self.canvas:
+            Color(0.0, 0.48, 0.82, 0.8)  # Paytm blue
+            if len(self.wave_data) > 1:
+                points = []
+                for i, sample in enumerate(self.wave_data):
+                    x = (i / len(self.wave_data)) * self.width
+                    y = self.height / 2 + (sample * self.height / 2)
+                    points.extend([x, y])
+                if len(points) > 2:
+                    Line(points=points, width=2)
+
+
+# Main Application Screens
+class LoginScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.auth_engine = None
+        self.recording = False
+        self.audio_buffer = []
+        self.recording_start_time = None
+        self.build_ui()
+
+    def build_ui(self):
+        layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
+
+        # Top bar
+        top_bar = BoxLayout(size_hint=(1, None), height=60, padding=[20, 10])
+        with top_bar.canvas.before:
+            Color(0.0, 0.48, 0.82, 1)
+            Rectangle(pos=top_bar.pos, size=top_bar.size)
+
+        title = Label(text='VoiceGuard', font_size='24sp', bold=True, color=(1, 1, 1, 1))
+        top_bar.add_widget(title)
+        layout.add_widget(top_bar)
+
+        # Scroll view for content
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(orientation='vertical', padding=20, spacing=20, size_hint_y=None)
+        content.bind(minimum_height=content.setter('height'))
+
+        # Welcome card
+        welcome_card = PaytmCard(size_hint=(1, None), height=120)
+        welcome_box = BoxLayout(orientation='vertical', spacing=5)
+        welcome_title = Label(text='Welcome Back!', font_size='22sp', bold=True,
+                             color=(0.2, 0.2, 0.2, 1), size_hint=(1, None), height=30)
+        welcome_subtitle = Label(text='Login with your voice for secure access',
+                                font_size='14sp', color=(0.5, 0.5, 0.5, 1))
+        welcome_box.add_widget(welcome_title)
+        welcome_box.add_widget(welcome_subtitle)
+        welcome_card.add_widget(welcome_box)
+        content.add_widget(welcome_card)
+
+        # Login card
+        login_card = PaytmCard(size_hint=(1, None), height=350)
+        login_box = BoxLayout(orientation='vertical', spacing=15)
+
+        # Username
+        username_label = Label(text='Username', font_size='14sp', color=(0.3, 0.3, 0.3, 1),
+                              size_hint=(1, None), height=25, halign='left')
+        username_label.bind(size=username_label.setter('text_size'))
+        login_box.add_widget(username_label)
+
+        self.username_input = TextInput(
+            hint_text='Enter your username',
+            multiline=False,
+            size_hint=(1, None),
+            height=45,
+            font_size='16sp',
+            padding=[15, 12],
+            background_color=(0.95, 0.95, 0.95, 1),
+            foreground_color=(0.2, 0.2, 0.2, 1),
+            cursor_color=(0.0, 0.48, 0.82, 1)
         )
-        
-        # Quality penalty
-        quality_factor = min(1.0, quality['overall_score'] / 0.7)
-        final_score *= quality_factor
-        
-        # Adaptive threshold
-        enrollment_quality = user_model.get('avg_quality', 0.7)
-        adaptive_threshold = self.authentication_threshold * (0.95 + 0.05 * enrollment_quality)
-        
-        debug_info = (
-            f"Embedding: {embedding_score:.3f} | SVM: {svm_score:.3f} | "
-            f"Statistical: {mahal_score:.3f} | Quality: {quality_factor:.2f}\n"
-            f"Final: {final_score:.3f} vs Threshold: {adaptive_threshold:.3f}"
+        login_box.add_widget(self.username_input)
+
+        # Voice recording
+        voice_label = Label(text='Voice Authentication', font_size='14sp',
+                           color=(0.3, 0.3, 0.3, 1), size_hint=(1, None), height=25,
+                           halign='left')
+        voice_label.bind(size=voice_label.setter('text_size'))
+        login_box.add_widget(voice_label)
+
+        self.waveform = VoiceWaveform(size_hint=(1, None), height=80)
+        with self.waveform.canvas.before:
+            Color(0.95, 0.95, 0.95, 1)
+            self.wave_bg = RoundedRectangle(pos=self.waveform.pos,
+                                           size=self.waveform.size, radius=[10])
+        self.waveform.bind(pos=self.update_wave_bg, size=self.update_wave_bg)
+        login_box.add_widget(self.waveform)
+
+        self.record_btn = PaytmButton(
+            text='Hold to Record Voice',
+            size_hint=(1, None),
+            height=50,
+            font_size='16sp',
+            bold=True
         )
-        
-        if final_score >= adaptive_threshold:
-            confidence = "Very High" if final_score > 0.90 else "High" if final_score > 0.85 else "Good"
-            msg = f"✅ AUTHENTICATED\nScore: {final_score:.1%} ({confidence})\n{debug_info}"
-            return True, final_score, msg
-        
-        msg = f"❌ AUTHENTICATION FAILED\n{debug_info}"
-        return False, final_score, msg
+        self.record_btn.bind(on_press=self.start_recording)
+        self.record_btn.bind(on_release=self.stop_recording)
+        login_box.add_widget(self.record_btn)
+
+        self.status_label = Label(
+            text='Ready for authentication',
+            size_hint=(1, None),
+            height=25,
+            color=(0.5, 0.5, 0.5, 1),
+            font_size='13sp'
+        )
+        login_box.add_widget(self.status_label)
+        login_card.add_widget(login_box)
+        content.add_widget(login_card)
+
+        # Action buttons
+        login_btn = PaytmButton(
+            text='LOGIN',
+            size_hint=(1, None),
+            height=55,
+            font_size='18sp',
+            bold=True
+        )
+        login_btn.bind(on_press=self.authenticate_voice)
+        content.add_widget(login_btn)
+
+        # Register link
+        register_box = BoxLayout(size_hint=(1, None), height=50)
+        register_label = Label(text="Don't have an account?", font_size='14sp',
+                              color=(0.5, 0.5, 0.5, 1))
+        register_btn = Button(text='Register', font_size='14sp', bold=True,
+                             color=(0.0, 0.48, 0.82, 1), background_color=(0, 0, 0, 0),
+                             size_hint=(None, 1), width=100)
+        register_btn.bind(on_press=self.go_to_register)
+        register_box.add_widget(register_label)
+        register_box.add_widget(register_btn)
+        content.add_widget(register_box)
+
+        scroll.add_widget(content)
+        layout.add_widget(scroll)
+        self.add_widget(layout)
+
+    def update_wave_bg(self, *args):
+        self.wave_bg.pos = self.waveform.pos
+        self.wave_bg.size = self.waveform.size
+
+    def start_recording(self, instance):
+        self.recording = True
+        self.audio_buffer = []
+        self.recording_start_time = datetime.now()
+        self.status_label.text = 'Recording... Keep speaking (hold button)'
+        self.status_label.color = (0.9, 0.3, 0.3, 1)
+        self.record_btn.text = '🔴 RECORDING...'
+        threading.Thread(target=self._record_audio, daemon=True).start()
+
+    def stop_recording(self, instance):
+        if not self.recording:
+            return
+
+        # Check minimum hold time
+        if self.recording_start_time:
+            hold_duration = (datetime.now() - self.recording_start_time).total_seconds()
+            if hold_duration < 0.8:  # Minimum 0.8 seconds
+                self.recording = False
+                self.status_label.text = f'Button held too briefly ({hold_duration:.1f}s). Hold for at least 1 second!'
+                self.status_label.color = (0.9, 0.3, 0.3, 1)
+                self.record_btn.text = 'Hold to Record Voice'
+                self.audio_buffer = []
+                return
+
+        self.recording = False
+        self.record_btn.text = 'Processing...'
+        self.status_label.text = f'Recording captured ({len(self.audio_buffer)/16000:.1f}s)'
+        self.status_label.color = (0.2, 0.7, 0.2, 1)
+
+        Clock.schedule_once(lambda dt: self._finish_recording(), 0.3)
+
+    def _finish_recording(self):
+        self.record_btn.text = 'Hold to Record Voice'
+        self.status_label.text = 'Voice recorded. Click LOGIN to authenticate'
+        self.status_label.color = (0.0, 0.48, 0.82, 1)
+
+    def _record_audio(self):
+        """Record audio in background"""
+        sample_rate = 16000
+        with sd.InputStream(samplerate=sample_rate, channels=1,
+                           callback=self._audio_callback):
+            while self.recording:
+                sd.sleep(100)
+
+    def _audio_callback(self, indata, frames, time, status):
+        """Audio stream callback"""
+        if self.recording:
+            self.audio_buffer.extend(indata[:, 0])
+            Clock.schedule_once(lambda dt: self.waveform.update_waveform(self.audio_buffer), 0)
+
+    def authenticate_voice(self, instance):
+        if not self.username_input.text:
+            self.show_popup("Error", "Please enter username")
+            return
+
+        if len(self.audio_buffer) < 4000:  # 0.25 seconds minimum
+            self.show_popup("Error", "Please record your voice first (hold button for at least 1-2 seconds)")
+            return
+
+        self.status_label.text = 'Authenticating...'
+        self.status_label.color = (0.9, 0.6, 0.0, 1)
+
+        # Authenticate
+        audio_array = np.array(self.audio_buffer)
+        success, score, message = self.auth_engine.authenticate(
+            self.username_input.text, audio_array
+        )
+
+        if success:
+            self.status_label.text = f'Success! Score: {score:.2f}'
+            self.status_label.color = (0.2, 0.7, 0.2, 1)
+
+            # Pass username to payment screen
+            payment_screen = self.manager.get_screen('payment')
+            payment_screen.current_user = self.username_input.text
+            payment_screen.on_enter()
+
+            # Small delay before transition
+            Clock.schedule_once(lambda dt: setattr(self.manager, 'current', 'payment'), 0.5)
+        else:
+            self.status_label.text = f'Failed: {message}'
+            self.status_label.color = (0.9, 0.3, 0.3, 1)
+
+    def go_to_register(self, instance):
+        self.manager.current = 'register'
+
+    def show_popup(self, title, message):
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        msg_label = Label(text=message, font_size='16sp')
+        content.add_widget(msg_label)
+        ok_btn = PaytmButton(text='OK', size_hint=(1, None), height=45)
+        content.add_widget(ok_btn)
+        popup = Popup(title=title, content=content, size_hint=(0.8, 0.3))
+        ok_btn.bind(on_press=popup.dismiss)
+        popup.open()
 
 
-# Microphone functions
-def get_audio_devices():
-    """Get available audio devices"""
-    try:
-        devices = sd.query_devices()
-        input_devices = []
-        
-        for i, device in enumerate(devices):
-            if device['max_input_channels'] > 0:
-                input_devices.append({
-                    'id': i,
-                    'name': device['name'],
-                    'channels': device['max_input_channels'],
-                    'sample_rate': int(device['default_samplerate'])
-                })
-        
-        return input_devices
-    except Exception as e:
-        st.error(f"Error getting devices: {e}")
-        return []
+class RegistrationScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.auth_engine = None
+        self.audio_samples = []
+        self.current_sample = 0
+        self.recording = False
+        self.audio_buffer = []
+        self.recording_start_time = None
+        self.build_ui()
 
+    def build_ui(self):
+        layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
 
-def show_microphone_selector():
-    """Display microphone selection"""
-    st.markdown("#### 🎙️ Microphone Selection")
-    
-    devices = get_audio_devices()
-    
-    if not devices:
-        st.error("❌ No microphone detected!")
-        return None
-    
-    try:
-        default_device = sd.query_devices(kind='input')
-        default_id = default_device['index'] if 'index' in default_device else devices[0]['id']
-    except:
-        default_id = devices[0]['id']
-    
-    default_index = 0
-    for i, dev in enumerate(devices):
-        if dev['id'] == default_id:
-            default_index = i
-            break
-    
-    device_options = []
-    for dev in devices:
-        label = f"🎤 {dev['name']}"
-        if dev['id'] == default_id:
-            label += " ⭐ (Default)"
-        device_options.append(label)
-    
-    selected_label = st.selectbox(
-        "Choose Microphone",
-        options=device_options,
-        index=default_index,
-        key="mic_selector"
-    )
-    
-    selected_index = device_options.index(selected_label)
-    selected_device = devices[selected_index]
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📊 Channels", selected_device['channels'])
-    with col2:
-        st.metric("📊 Sample Rate", f"{selected_device['sample_rate']} Hz")
-    with col3:
-        st.metric("🆔 Device ID", selected_device['id'])
-    
-    # Test microphone
-    if st.button("🧪 Test Microphone (3 sec)", key="test_mic"):
-        st.info("🎤 Recording test... Speak now!")
-        test_audio = record_audio(duration=3, device_id=selected_device['id'])
-        if test_audio is not None:
-            max_amplitude = np.max(np.abs(test_audio))
-            rms = np.sqrt(np.mean(test_audio ** 2))
-            non_silence = np.sum(np.abs(test_audio) > 0.01) / len(test_audio)
-            
-            st.success("✅ Test recording completed!")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Max Amplitude", f"{max_amplitude:.3f}")
-            with col2:
-                st.metric("RMS Energy", f"{rms:.3f}")
-            with col3:
-                st.metric("Voice Activity", f"{non_silence:.0%}")
-            
-            if max_amplitude < 0.01:
-                st.error("❌ Microphone NOT picking up audio!")
-            elif rms < 0.02:
-                st.warning("⚠️ Audio very quiet. Speak louder.")
-            elif non_silence < 0.3:
-                st.warning("⚠️ Too much silence.")
+        # Top bar
+        top_bar = BoxLayout(size_hint=(1, None), height=60, padding=[20, 10])
+        with top_bar.canvas.before:
+            Color(0.0, 0.48, 0.82, 1)
+            Rectangle(pos=top_bar.pos, size=top_bar.size)
+
+        back_btn = Button(text='<', font_size='24sp', bold=True,
+                         color=(1, 1, 1, 1), background_color=(0, 0, 0, 0),
+                         size_hint=(None, 1), width=50)
+        back_btn.bind(on_press=self.go_back)
+        top_bar.add_widget(back_btn)
+
+        title = Label(text='Register', font_size='22sp', bold=True, color=(1, 1, 1, 1))
+        top_bar.add_widget(title)
+
+        top_bar.add_widget(Label(size_hint=(None, 1), width=50))  # Spacer
+
+        layout.add_widget(top_bar)
+
+        # Scroll content
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(orientation='vertical', padding=20, spacing=20, size_hint_y=None)
+        content.bind(minimum_height=content.setter('height'))
+
+        # Info card
+        info_card = PaytmCard(size_hint=(1, None), height=100)
+        info_label = Label(
+            text='Create your voice profile\nRecord 5 clear voice samples for secure authentication',
+            font_size='15sp', color=(0.3, 0.3, 0.3, 1), halign='center'
+        )
+        info_card.add_widget(info_label)
+        content.add_widget(info_card)
+
+        # User details card
+        details_card = PaytmCard(size_hint=(1, None), height=180)
+        details_box = BoxLayout(orientation='vertical', spacing=10)
+
+        self.username_input = TextInput(
+            hint_text='Username',
+            multiline=False,
+            size_hint=(1, None),
+            height=45,
+            font_size='16sp',
+            padding=[15, 12],
+            background_color=(0.95, 0.95, 0.95, 1)
+        )
+        details_box.add_widget(self.username_input)
+
+        self.email_input = TextInput(
+            hint_text='Email Address',
+            multiline=False,
+            size_hint=(1, None),
+            height=45,
+            font_size='16sp',
+            padding=[15, 12],
+            background_color=(0.95, 0.95, 0.95, 1)
+        )
+        details_box.add_widget(self.email_input)
+
+        details_card.add_widget(details_box)
+        content.add_widget(details_card)
+
+        # Progress card
+        progress_card = PaytmCard(size_hint=(1, None), height=120)
+        progress_box = BoxLayout(orientation='vertical', spacing=10)
+
+        self.progress_label = Label(
+            text='Sample 1 of 5',
+            font_size='18sp',
+            bold=True,
+            color=(0.0, 0.48, 0.82, 1),
+            size_hint=(1, None),
+            height=30
+        )
+        progress_box.add_widget(self.progress_label)
+
+        self.progress = ProgressBar(max=5, value=0, size_hint=(1, None), height=8)
+        progress_box.add_widget(self.progress)
+
+        self.instruction_label = Label(
+            text='Say: "Authorize payment"',
+            font_size='16sp',
+            color=(0.4, 0.4, 0.4, 1),
+            size_hint=(1, None),
+            height=30
+        )
+        progress_box.add_widget(self.instruction_label)
+
+        progress_card.add_widget(progress_box)
+        content.add_widget(progress_card)
+
+        # Voice recording card
+        voice_card = PaytmCard(size_hint=(1, None), height=200)
+        voice_box = BoxLayout(orientation='vertical', spacing=10)
+
+        self.waveform = VoiceWaveform(size_hint=(1, None), height=100)
+        with self.waveform.canvas.before:
+            Color(0.95, 0.95, 0.95, 1)
+            self.wave_bg = RoundedRectangle(pos=self.waveform.pos,
+                                           size=self.waveform.size, radius=[10])
+        self.waveform.bind(pos=self.update_wave_bg, size=self.update_wave_bg)
+        voice_box.add_widget(self.waveform)
+
+        self.record_btn = PaytmButton(
+            text='Hold to Record',
+            size_hint=(1, None),
+            height=55,
+            font_size='18sp',
+            bold=True
+        )
+        self.record_btn.bind(on_press=self.start_recording)
+        self.record_btn.bind(on_release=self.stop_recording)
+        voice_box.add_widget(self.record_btn)
+
+        voice_card.add_widget(voice_box)
+        content.add_widget(voice_card)
+
+        # Register button
+        self.register_btn = PaytmButton(
+            text='COMPLETE REGISTRATION',
+            size_hint=(1, None),
+            height=55,
+            font_size='18sp',
+            bold=True,
+            disabled=True
+        )
+        self.register_btn.bind(on_press=self.complete_registration)
+        content.add_widget(self.register_btn)
+
+        # Reset button
+        reset_btn = Button(
+            text='Reset Samples',
+            size_hint=(1, None),
+            height=50,
+            font_size='16sp',
+            background_color=(0, 0, 0, 0),
+            color=(0.9, 0.3, 0.3, 1)
+        )
+        reset_btn.bind(on_press=self.reset_samples)
+        content.add_widget(reset_btn)
+
+        scroll.add_widget(content)
+        layout.add_widget(scroll)
+        self.add_widget(layout)
+
+    def update_wave_bg(self, *args):
+        self.wave_bg.pos = self.waveform.pos
+        self.wave_bg.size = self.waveform.size
+
+    def reset_samples(self, instance):
+        """Reset all samples to start over"""
+        self.audio_samples = []
+        self.current_sample = 0
+        self.progress.value = 0
+        self.progress_label.text = 'Sample 1 of 5'
+        self.instruction_label.text = 'Say: "Authorize payment"'
+        self.record_btn.disabled = False
+        self.register_btn.disabled = True
+        self.show_popup("Reset", "All voice samples cleared. Start recording again.")
+
+    def start_recording(self, instance):
+        self.recording = True
+        self.audio_buffer = []
+        self.recording_start_time = datetime.now()
+        self.record_btn.text = '🔴 RECORDING...'
+        self.instruction_label.text = 'Recording... Keep speaking (hold button)'
+        threading.Thread(target=self._record_audio, daemon=True).start()
+
+    def stop_recording(self, instance):
+        if not self.recording:
+            return
+
+        # Check minimum hold time
+        if self.recording_start_time:
+            hold_duration = (datetime.now() - self.recording_start_time).total_seconds()
+            if hold_duration < 0.8:  # Minimum 0.8 seconds
+                self.recording = False
+                self.instruction_label.text = f'Button held too briefly ({hold_duration:.1f}s). Hold for at least 1 second!'
+                self.record_btn.text = 'Hold to Record'
+                self.audio_buffer = []
+                return
+
+        self.recording = False
+        self.record_btn.text = 'Processing...'
+
+        # Show recording duration
+        duration = len(self.audio_buffer) / 16000
+        self.instruction_label.text = f'Captured {duration:.1f} seconds'
+
+        Clock.schedule_once(self.process_sample, 0.3)
+
+    def process_sample(self, dt):
+        if len(self.audio_buffer) > 4000:  # 0.25 seconds minimum
+            self.audio_samples.append(np.array(self.audio_buffer))
+            self.current_sample += 1
+            self.progress.value = self.current_sample
+            self.progress_label.text = f'Sample {self.current_sample} of 5'
+
+            if self.current_sample < 5:
+                phrases = ["Authorize payment", "Verify transaction", "Complete purchase", "Confirm identity", "Voice authentication"]
+                self.instruction_label.text = f'Say: "{phrases[self.current_sample]}"'
+                self.record_btn.text = 'Hold to Record'
             else:
-                st.success("✅ Microphone working well!")
-    
-    return selected_device['id']
-
-
-def record_audio(duration=3, sample_rate=16000, device_id=None):
-    """Record audio from microphone"""
-    try:
-        if device_id is not None:
-            device_info = sd.query_devices(device_id)
-            st.info(f"🎤 Using: **{device_info['name']}**")
+                self.instruction_label.text = 'All samples recorded!'
+                self.record_btn.disabled = True
+                self.record_btn.text = 'Completed'
+                self.register_btn.disabled = False
         else:
-            default_device = sd.query_devices(kind='input')
-            st.info(f"🎤 Using: **{default_device['name']}** (default)")
-            device_id = default_device['index'] if 'index' in default_device else None
-        
-        placeholder = st.empty()
-        placeholder.success("🔴 Recording NOW... Speak clearly!")
-        
-        recording = sd.rec(int(duration * sample_rate), 
-                          samplerate=sample_rate, 
-                          channels=1, 
-                          dtype='float32',
-                          device=device_id,
-                          blocking=False)
-        
-        progress_bar = st.progress(0)
-        time_remaining = st.empty()
-        
-        for i in range(100):
-            progress = (i + 1) / 100
-            progress_bar.progress(progress)
-            remaining = duration * (1 - progress)
-            time_remaining.text(f"⏱️ {remaining:.1f}s remaining")
-            time.sleep(duration / 100)
-        
-        sd.wait()
-        progress_bar.empty()
-        time_remaining.empty()
-        placeholder.empty()
-        
-        audio_data = recording.flatten()
-        
-        max_amp = np.max(np.abs(audio_data))
-        rms = np.sqrt(np.mean(audio_data ** 2))
-        
-        if max_amp < 0.01:
-            st.error("❌ No audio detected!")
-            return None
-        elif rms < 0.015:
-            st.warning(f"⚠️ Very quiet audio (RMS={rms:.4f})")
-        
-        return audio_data
-        
-    except Exception as e:
-        st.error(f"❌ Recording error: {str(e)}")
-        return None
+            duration = len(self.audio_buffer) / 16000
+            self.instruction_label.text = f'Recording too short ({duration:.1f}s)! Hold button for 1-2 seconds'
+            self.record_btn.text = 'Hold to Record'
 
+    def _record_audio(self):
+        sample_rate = 16000
+        with sd.InputStream(samplerate=sample_rate, channels=1,
+                           callback=self._audio_callback):
+            while self.recording:
+                sd.sleep(100)
 
-# Initialize session state
-def init_session_state():
-    if 'page' not in st.session_state:
-        st.session_state.page = 'login'
-    if 'auth_engine' not in st.session_state:
-        st.session_state.auth_engine = RealVoiceAuthenticationEngine()
-    if 'current_user' not in st.session_state:
-        st.session_state.current_user = None
-    if 'user_balance' not in st.session_state:
-        st.session_state.user_balance = 10000.00
-    if 'audio_samples' not in st.session_state:
-        st.session_state.audio_samples = []
+    def _audio_callback(self, indata, frames, time, status):
+        if self.recording:
+            self.audio_buffer.extend(indata[:, 0])
+            Clock.schedule_once(lambda dt: self.waveform.update_waveform(self.audio_buffer), 0)
 
+    def complete_registration(self, instance):
+        if not self.username_input.text or not self.email_input.text:
+            self.show_popup("Error", "Please fill all fields")
+            return
 
-# Login Page
-def login_page():
-    st.markdown('<div class="app-header"><h1>🔒 VoiceGuard REAL AI</h1><p>Deep Learning Voice Authentication (82% Threshold)</p></div>', 
-                unsafe_allow_html=True)
-    
-    # Debug section
-    with st.expander("🔍 System Status & Models"):
-        st.markdown("**🧠 REAL Deep Learning Features:**")
-        st.markdown("""
-        - ✅ **Trained Neural Network** (512→256→128→64 dimensions)
-        - ✅ **SVM Classifier** (trained on your voice patterns)
-        - ✅ **200+ discriminative features** (MFCC, spectral, prosodic)
-        - ✅ **82% similarity threshold** (very strict)
-        """)
-        
-        if st.session_state.db_trained_models:
-            st.success(f"**👥 {len(st.session_state.db_trained_models)} trained models:**")
-            for username, model in st.session_state.db_trained_models.items():
-                quality = model.get('avg_quality', 0)
-                num_samples = model.get('num_samples', 0)
-                st.write(f"✅ **{username}** - {num_samples} samples, Quality: {quality:.1%}")
+        if len(self.audio_samples) < 5:
+            self.show_popup("Error", "Please record all 5 voice samples")
+            return
+
+        # Show loading
+        self.register_btn.text = 'Enrolling...'
+        self.register_btn.disabled = True
+
+        # Enroll user in background
+        threading.Thread(target=self._enroll_user, daemon=True).start()
+
+    def _enroll_user(self):
+        success = self.auth_engine.enroll_user(self.username_input.text, self.audio_samples)
+        Clock.schedule_once(lambda dt: self._handle_enrollment_result(success), 0)
+
+    def _handle_enrollment_result(self, success):
+        if success:
+            # Store user data
+            user_data = {
+                'username': self.username_input.text,
+                'email': self.email_input.text,
+                'created_at': datetime.now().isoformat(),
+                'balance': 10000.00
+            }
+            self.auth_engine.db.store_user(self.username_input.text, user_data)
+            self.show_success_popup()
         else:
-            st.warning("No users enrolled yet.")
-        
-        if st.button("🗑️ Clear All Data"):
-            import shutil
-            if os.path.exists("voiceguard_data_v2"):
-                shutil.rmtree("voiceguard_data_v2")
-            st.session_state.clear()
-            st.success("✅ All data cleared! Refresh page.")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### 🔐 Login")
-        
-        username = st.text_input("Username", placeholder="Enter your username", key="login_username")
-        
-        st.markdown("---")
-        
-        selected_device_id = show_microphone_selector()
-        
-        st.markdown("---")
-        
-        st.markdown("### 🎤 Voice Authentication")
-        
-        with st.expander("💡 IMPORTANT: How to Record"):
-            st.markdown("""
-            **To PASS authentication:**
-            - 🗣️ Speak NORMALLY (same as enrollment)
-            - 🎤 Same distance from microphone
-            - ⏱️ Record for 3-4 seconds
-            - 🔇 Quiet environment
-            
-            **System will REJECT:**
-            - ⚠️ Shouting or yelling
-            - ⚠️ Different voice characteristics
-            """)
-        
-        duration = st.slider("Recording Duration (seconds)", 3, 5, 3)
-        
-        col_rec1, col_rec2 = st.columns(2)
-        
-        with col_rec1:
-            if st.button("🎤 Record Voice", use_container_width=True):
-                if not username:
-                    st.error("❌ Please enter username first")
-                elif selected_device_id is None:
-                    st.error("❌ Please test microphone first!")
-                else:
-                    st.warning("⚠️ Speak NORMALLY - don't shout!")
-                    time.sleep(1)
-                    audio_data = record_audio(duration, device_id=selected_device_id)
-                    if audio_data is not None:
-                        st.session_state.login_audio = audio_data
-                        
-                        quality = st.session_state.auth_engine.quality_checker.check_audio_quality(audio_data)
-                        
-                        col_q1, col_q2, col_q3, col_q4 = st.columns(4)
-                        with col_q1:
-                            st.metric("Quality", f"{quality['overall_score']:.1%}")
-                        with col_q2:
-                            st.metric("Duration", f"{quality['duration']:.1f}s")
-                        with col_q3:
-                            st.metric("Energy", f"{quality['rms_energy']:.3f}")
-                        with col_q4:
-                            st.metric("Consistency", f"{quality['energy_consistency']:.2f}")
-                        
-                        if quality['clipping'] > 0.01:
-                            st.error(f"⚠️ CLIPPING: {quality['clipping']:.1%}")
-                        
-                        if quality['issues']:
-                            st.warning(f"Issues: {', '.join(quality['issues'][:3])}")
-                        else:
-                            st.success("✅ Good quality audio!")
-        
-        with col_rec2:
-            if st.button("🔓 LOGIN", use_container_width=True, type="primary"):
-                if not username:
-                    st.error("❌ Please enter username")
-                elif 'login_audio' not in st.session_state:
-                    st.error("❌ Please record your voice first")
-                else:
-                    with st.spinner("🧠 Running deep learning analysis..."):
-                        success, score, message = st.session_state.auth_engine.authenticate(
-                            username, st.session_state.login_audio
-                        )
-                        
-                        if success:
-                            st.success(message)
-                            st.balloons()
-                            st.session_state.current_user = username
-                            
-                            user_data = st.session_state.auth_engine.db.get_user(username)
-                            if user_data:
-                                st.session_state.user_balance = user_data.get('balance', 10000.00)
-                            
-                            time.sleep(2)
-                            st.session_state.page = 'payment'
-                            st.rerun()
-                        else:
-                            st.error(message)
-                            st.warning("🔒 Access Denied")
-        
-        st.markdown("---")
-        if st.button("📝 Don't have an account? **Register**", use_container_width=True):
-            st.session_state.page = 'register'
-            st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            self.register_btn.text = 'COMPLETE REGISTRATION'
+            self.register_btn.disabled = False
+            self.show_popup("Enrollment Failed",
+                           "Voice quality too low. Please reset and try again with clearer audio.")
+
+    def show_success_popup(self):
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        success_label = Label(
+            text='Registration Successful!\n\nYou can now login with your voice',
+            font_size='18sp',
+            halign='center'
+        )
+        content.add_widget(success_label)
+        ok_btn = PaytmButton(text='GO TO LOGIN', size_hint=(1, None), height=50)
+        content.add_widget(ok_btn)
+        popup = Popup(title='Success', content=content, size_hint=(0.85, 0.4))
+        ok_btn.bind(on_press=lambda x: (popup.dismiss(), self.go_back(None)))
+        popup.open()
+
+    def go_back(self, instance):
+        # Reset form
+        self.username_input.text = ''
+        self.email_input.text = ''
+        self.audio_samples = []
+        self.current_sample = 0
+        self.progress.value = 0
+        self.progress_label.text = 'Sample 1 of 5'
+        self.instruction_label.text = 'Say: "Authorize payment"'
+        self.record_btn.disabled = False
+        self.record_btn.text = 'Hold to Record'
+        self.register_btn.disabled = True
+        self.manager.current = 'login'
+
+    def show_popup(self, title, message):
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        msg_label = Label(text=message, font_size='16sp')
+        content.add_widget(msg_label)
+        ok_btn = PaytmButton(text='OK', size_hint=(1, None), height=45)
+        content.add_widget(ok_btn)
+        popup = Popup(title=title, content=content, size_hint=(0.8, 0.35))
+        ok_btn.bind(on_press=popup.dismiss)
+        popup.open()
 
 
-# Registration Page
-def registration_page():
-    st.markdown('<div class="app-header"><h1>📝 Register & Train AI</h1><p>Record 5 samples to train your personal voice model</p></div>', 
-                unsafe_allow_html=True)
-    
-    if st.button("← Back to Login"):
-        st.session_state.page = 'login'
-        st.session_state.audio_samples = []
-        st.rerun()
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+class PaymentScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.auth_engine = None
+        self.recording = False
+        self.audio_buffer = []
+        self.current_user = None
+        self.challenge_phrase = None
+        self.transaction_amount = 0
+        self.user_balance = 10000.00
+        self.recording_start_time = None
+        self.auth_attempt_count = 0  # Track attempt count for this transaction
+        self.build_ui()
+
+    def build_ui(self):
+        layout = BoxLayout(orientation='vertical', padding=0, spacing=0)
+
+        # Top bar
+        top_bar = BoxLayout(size_hint=(1, None), height=180, orientation='vertical')
+        with top_bar.canvas.before:
+            Color(0.0, 0.48, 0.82, 1)
+            Rectangle(pos=top_bar.pos, size=top_bar.size)
+
+        # Header row
+        header_row = BoxLayout(size_hint=(1, None), height=50, padding=[20, 10])
+        self.user_label = Label(text='User', font_size='16sp', color=(1, 1, 1, 1),
+                               halign='left')
+        self.user_label.bind(size=self.user_label.setter('text_size'))
+        header_row.add_widget(self.user_label)
+
+        logout_btn = Button(text='Logout', font_size='14sp', color=(1, 1, 1, 1),
+                           background_color=(0, 0, 0, 0), size_hint=(None, 1), width=80)
+        logout_btn.bind(on_press=self.logout)
+        header_row.add_widget(logout_btn)
+
+        top_bar.add_widget(header_row)
+
+        # Balance display
+        balance_box = BoxLayout(orientation='vertical', padding=[20, 10], spacing=5)
+        balance_title = Label(text='Available Balance', font_size='14sp',
+                             color=(0.9, 0.9, 0.9, 1), size_hint=(1, None), height=20)
+        self.balance_label = Label(text='₹10,000.00', font_size='36sp', bold=True,
+                                  color=(1, 1, 1, 1), size_hint=(1, None), height=50)
+        balance_box.add_widget(balance_title)
+        balance_box.add_widget(self.balance_label)
+
+        top_bar.add_widget(balance_box)
+        layout.add_widget(top_bar)
+
+        # Scroll content
+        scroll = ScrollView(size_hint=(1, 1))
+        content = BoxLayout(orientation='vertical', padding=20, spacing=20, size_hint_y=None)
+        content.bind(minimum_height=content.setter('height'))
+
+        # Payment form card
+        form_card = PaytmCard(size_hint=(1, None), height=300)
+        form_box = BoxLayout(orientation='vertical', spacing=15)
+
+        form_title = Label(text='Send Money', font_size='20sp', bold=True,
+                          color=(0.2, 0.2, 0.2, 1), size_hint=(1, None), height=30,
+                          halign='left')
+        form_title.bind(size=form_title.setter('text_size'))
+        form_box.add_widget(form_title)
+
+        # Recipient
+        self.recipient_input = TextInput(
+            hint_text='Recipient Name or Number',
+            multiline=False,
+            size_hint=(1, None),
+            height=50,
+            font_size='16sp',
+            padding=[15, 15],
+            background_color=(0.95, 0.95, 0.95, 1)
+        )
+        form_box.add_widget(self.recipient_input)
+
+        # Amount
+        self.amount_input = TextInput(
+            hint_text='Enter Amount (₹)',
+            multiline=False,
+            size_hint=(1, None),
+            height=50,
+            font_size='20sp',
+            padding=[15, 15],
+            background_color=(0.95, 0.95, 0.95, 1),
+            input_filter='float'
+        )
+        form_box.add_widget(self.amount_input)
+
+        # Description
+        self.desc_input = TextInput(
+            hint_text='Add a note (optional)',
+            multiline=False,
+            size_hint=(1, None),
+            height=45,
+            font_size='14sp',
+            padding=[15, 12],
+            background_color=(0.95, 0.95, 0.95, 1)
+        )
+        form_box.add_widget(self.desc_input)
+
+        form_card.add_widget(form_box)
+        content.add_widget(form_card)
+
+        # Voice auth card
+        voice_card = PaytmCard(size_hint=(1, None), height=280)
+        voice_box = BoxLayout(orientation='vertical', spacing=10)
+
+        voice_title = Label(text='Voice Authentication', font_size='18sp', bold=True,
+                           color=(0.2, 0.2, 0.2, 1), size_hint=(1, None), height=30,
+                           halign='left')
+        voice_title.bind(size=voice_title.setter('text_size'))
+        voice_box.add_widget(voice_title)
+
+        self.challenge_label = Label(
+            text='Click "Pay Now" to start verification',
+            font_size='15sp',
+            color=(0.5, 0.5, 0.5, 1),
+            size_hint=(1, None),
+            height=50
+        )
+        voice_box.add_widget(self.challenge_label)
+
+        self.waveform = VoiceWaveform(size_hint=(1, None), height=90)
+        with self.waveform.canvas.before:
+            Color(0.95, 0.95, 0.95, 1)
+            self.wave_bg = RoundedRectangle(pos=self.waveform.pos,
+                                           size=self.waveform.size, radius=[10])
+        self.waveform.bind(pos=self.update_wave_bg, size=self.update_wave_bg)
+        voice_box.add_widget(self.waveform)
+
+        self.voice_btn = PaytmButton(
+            text='PAY NOW',
+            size_hint=(1, None),
+            height=55,
+            font_size='20sp',
+            bold=True
+        )
+        self.voice_btn.bind(on_press=self.initiate_payment)
+        voice_box.add_widget(self.voice_btn)
+
+        voice_card.add_widget(voice_box)
+        content.add_widget(voice_card)
+
+        # Transaction history
+        history_card = PaytmCard(size_hint=(1, None), height=180)
+        history_box = BoxLayout(orientation='vertical', spacing=10)
+
+        history_title = Label(text='Recent Transactions', font_size='18sp', bold=True,
+                             color=(0.2, 0.2, 0.2, 1), size_hint=(1, None), height=30,
+                             halign='left')
+        history_title.bind(size=history_title.setter('text_size'))
+        history_box.add_widget(history_title)
+
+        self.history_label = Label(
+            text='No recent transactions',
+            font_size='14sp',
+            color=(0.5, 0.5, 0.5, 1),
+            halign='left'
+        )
+        self.history_label.bind(size=self.history_label.setter('text_size'))
+        history_box.add_widget(self.history_label)
+
+        history_card.add_widget(history_box)
+        content.add_widget(history_card)
+
+        scroll.add_widget(content)
+        layout.add_widget(scroll)
+        self.add_widget(layout)
+
+    def update_wave_bg(self, *args):
+        self.wave_bg.pos = self.waveform.pos
+        self.wave_bg.size = self.waveform.size
+
+    def on_enter(self):
+        """Called when entering this screen"""
+        if not self.current_user:
+            self.current_user = "TestUser"
+        self.user_label.text = f' {self.current_user}'
+        self.balance_label.text = f'₹{self.user_balance:,.2f}'
+        self.update_transaction_history()
+        self.auth_attempt_count = 0  # Reset attempt count for new transaction
+
+    def initiate_payment(self, instance):
+        if not self.validate_payment_form():
+            return
+
+        # Generate challenge phrase
+        self.challenge_phrase, _ = self.auth_engine.anti_spoofing.generate_challenge()
+        self.challenge_label.text = f'Say: "{self.challenge_phrase}"'
+        self.challenge_label.color = (0.9, 0.3, 0.3, 1)
+
+        # Change to recording mode
+        self.voice_btn.text = 'HOLD TO AUTHORIZE'
+        self.voice_btn.unbind(on_press=self.initiate_payment)
+        self.voice_btn.bind(on_press=self.start_voice_auth)
+        self.voice_btn.bind(on_release=self.stop_voice_auth)
         
-        st.markdown("### 👤 User Information")
-        username = st.text_input("Username", placeholder="Choose username", key="reg_username")
-        email = st.text_input("Email", placeholder="your.email@example.com", key="reg_email")
-        
-        st.markdown("---")
-        
-        selected_device_id = show_microphone_selector()
-        
-        st.markdown("---")
-        
-        st.markdown("### 🎙️ Voice Training (5 Samples)")
-        st.info("📢 Record 5 high-quality samples.")
-        
-        progress = len(st.session_state.audio_samples)
-        st.progress(progress / 5)
-        
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            st.metric("Samples", f"{progress}/5")
-        with col_p2:
-            if progress > 0:
-                st.metric("Status", "Training..." if progress < 5 else "Ready ✅")
-        
-        if progress < 5:
-            phrases = [
-                "Hello, this is my voice for secure authentication",
-                "I authorize transactions with my unique voice signature",
-                "Voice biometric enrollment sample number",
-                "Security verification with advanced voice recognition",
-                "My voice is my password for financial transactions"
-            ]
-            
-            st.markdown(f"**🗣️ Suggested phrase {progress+1}:**")
-            st.markdown(f"*'{phrases[progress]} {progress+1}'*")
-            
-            st.warning("⚠️ **CRITICAL:** Speak NORMALLY. Don't shout!")
-            
-            duration = st.slider("Recording Duration (seconds)", 3, 5, 4, key=f"duration_{progress}")
-            
-            col_rec1, col_rec2 = st.columns(2)
-            
-            with col_rec1:
-                if st.button(f"🎤 Record Sample {progress + 1}", use_container_width=True, key=f"rec_{progress}"):
-                    if selected_device_id is None:
-                        st.error("❌ Please test microphone first!")
-                    else:
-                        audio_data = record_audio(duration, device_id=selected_device_id)
-                        if audio_data is not None:
-                            quality = st.session_state.auth_engine.quality_checker.check_audio_quality(audio_data)
-                            
-                            if quality['overall_score'] >= 0.50:
-                                st.session_state.audio_samples.append(audio_data)
-                                st.success(f"✅ Sample {progress + 1} accepted! Quality: {quality['overall_score']:.1%}")
-                                
-                                if quality['issues']:
-                                    st.info(f"📝 Notes: {', '.join(quality['issues'][:2])}")
-                                
-                                time.sleep(1.5)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Sample REJECTED ({quality['overall_score']:.1%})")
-                                for issue in quality['issues'][:3]:
-                                    st.warning(f"• {issue}")
-            
-            with col_rec2:
-                if st.button("🔄 Reset All", use_container_width=True):
-                    st.session_state.audio_samples = []
-                    st.rerun()
-        
+        # Reset attempt counter for this payment
+        self.auth_attempt_count = 0
+
+    def start_voice_auth(self, instance):
+        self.recording = True
+        self.audio_buffer = []
+        self.recording_start_time = datetime.now()
+        self.challenge_label.text = 'Recording... Keep speaking (hold button)'
+        self.challenge_label.color = (0.9, 0.3, 0.3, 1)
+        self.voice_btn.text = '🔴 RECORDING...'
+        threading.Thread(target=self._record_audio, daemon=True).start()
+
+    def stop_voice_auth(self, instance):
+        if not self.recording:
+            return
+
+        # Calculate how long the button was held
+        if self.recording_start_time:
+            hold_duration = (datetime.now() - self.recording_start_time).total_seconds()
+
+            # Require minimum hold time of 1 second
+            if hold_duration < 1.0:
+                self.recording = False
+                self.challenge_label.text = f'Button held too briefly ({hold_duration:.1f}s). Hold for at least 2 seconds!'
+                self.challenge_label.color = (0.9, 0.3, 0.3, 1)
+                self.voice_btn.text = 'HOLD TO AUTHORIZE'
+                self.audio_buffer = []
+                return
+
+        self.recording = False
+        duration = len(self.audio_buffer) / 16000
+        self.challenge_label.text = f'Processing ({duration:.1f}s recorded)...'
+        self.challenge_label.color = (0.9, 0.6, 0.0, 1)
+        self.voice_btn.text = 'Processing...'
+        Clock.schedule_once(lambda dt: self.process_payment(), 0.5)
+
+    def _record_audio(self):
+        sample_rate = 16000
+        with sd.InputStream(samplerate=sample_rate, channels=1,
+                           callback=self._audio_callback):
+            while self.recording:
+                sd.sleep(100)
+
+    def _audio_callback(self, indata, frames, time, status):
+        if self.recording:
+            self.audio_buffer.extend(indata[:, 0])
+            Clock.schedule_once(lambda dt: self.waveform.update_waveform(self.audio_buffer), 0)
+
+    def process_payment(self):
+        # More lenient minimum
+        if len(self.audio_buffer) < 4000:  # 0.25 seconds minimum
+            duration = len(self.audio_buffer) / 16000
+            self.show_popup("Error", f"Recording too short ({duration:.1f}s). Please HOLD the button while speaking (need 2-4 seconds)")
+            self.reset_voice_button()
+            return
+
+        audio_array = np.array(self.audio_buffer)
+        self.challenge_label.text = 'Verifying voice...'
+
+        # Increment attempt count and authenticate
+        self.auth_attempt_count += 1
+        success, score, message = self.auth_engine.authenticate(
+            self.current_user, audio_array, self.challenge_phrase,
+            attempt_number=self.auth_attempt_count
+        )
+
+        if success:
+            self.transaction_amount = float(self.amount_input.text)
+
+            # Log transaction
+            transaction = {
+                'user': self.current_user,
+                'recipient': self.recipient_input.text,
+                'amount': self.transaction_amount,
+                'description': self.desc_input.text,
+                'voice_score': score,
+                'status': 'completed'
+            }
+            self.auth_engine.db.log_transaction(transaction)
+
+            # Update balance
+            self.user_balance -= self.transaction_amount
+            self.balance_label.text = f'₹{self.user_balance:,.2f}'
+
+            # Clear form
+            self.clear_payment_form()
+            self.update_transaction_history()
+
+            # Show success
+            self.show_success_popup(transaction)
         else:
-            st.success("✅ All 5 samples recorded!")
-            
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                if st.button("🚀 TRAIN AI MODEL", use_container_width=True, type="primary"):
-                    if not username or not email:
-                        st.error("❌ Please fill all fields")
-                    elif username in st.session_state.db_trained_models:
-                        st.error("❌ Username exists")
-                    else:
-                        with st.spinner("🧠 Training neural network..."):
-                            success, message = st.session_state.auth_engine.enroll_user(
-                                username, st.session_state.audio_samples
-                            )
-                            
-                            if success:
-                                user_data = {
-                                    'username': username,
-                                    'email': email,
-                                    'created_at': datetime.now().isoformat(),
-                                    'balance': 10000.00
-                                }
-                                st.session_state.auth_engine.db.store_user(username, user_data)
-                                
-                                st.success(f"🎉 {message}")
-                                st.balloons()
-                                
-                                time.sleep(3)
-                                st.session_state.audio_samples = []
-                                st.session_state.page = 'login'
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {message}")
-            
-            with col_btn2:
-                if st.button("🔄 Start Over", use_container_width=True):
-                    st.session_state.audio_samples = []
-                    st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            # Log declined transaction
+            transaction = {
+                'user': self.current_user,
+                'recipient': self.recipient_input.text,
+                'amount': float(self.amount_input.text),
+                'description': self.desc_input.text,
+                'voice_score': score,
+                'status': 'declined',
+                'reason': message
+            }
+            self.auth_engine.db.log_transaction(transaction)
 
+            # Show decline popup
+            self.show_decline_popup(transaction, message)
+            self.challenge_label.text = f'Failed: {message}'
+            self.challenge_label.color = (0.9, 0.3, 0.3, 1)
+            self.reset_voice_button()
 
-# Payment Page
-def payment_page():
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.markdown(f'<div class="app-header"><h2>Welcome, {st.session_state.current_user}!</h2></div>', 
-                    unsafe_allow_html=True)
-    with col2:
-        if st.button("🚪 Logout", use_container_width=True):
-            st.session_state.current_user = None
-            st.session_state.page = 'login'
-            st.rerun()
-    
-    st.markdown(f"""
-    <div class="custom-card" style="background: linear-gradient(135deg, #00b0ff 0%, #0080d6 100%); color: white;">
-        <h3>💰 Available Balance</h3>
-        <h1>₹{st.session_state.user_balance:,.2f}</h1>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### 💸 Send Money")
-        
-        recipient = st.text_input("Recipient", placeholder="Name or phone")
-        amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
-        description = st.text_input("Note (optional)", placeholder="Payment for...")
-        
-        st.markdown("---")
-        
-        selected_device_id = show_microphone_selector()
-        
-        st.markdown("---")
-        
-        st.markdown("### 🔒 AI Voice Authorization")
-        st.info("🗣️ Speak normally for 3-4 seconds")
-        
-        duration = st.slider("Recording Duration", 3, 5, 3, key="payment_duration")
-        
-        col_pay1, col_pay2 = st.columns(2)
-        
-        with col_pay1:
-            if st.button("🎤 Record Authorization", use_container_width=True):
-                if selected_device_id is None:
-                    st.error("❌ Please test microphone first!")
-                else:
-                    st.warning("⚠️ Speak NORMALLY!")
-                    time.sleep(0.5)
-                    audio_data = record_audio(duration, device_id=selected_device_id)
-                    if audio_data is not None:
-                        st.session_state.payment_audio = audio_data
-                        
-                        quality = st.session_state.auth_engine.quality_checker.check_audio_quality(audio_data)
-                        
-                        if quality['overall_score'] >= 0.45:
-                            st.success(f"✅ Recorded (Quality: {quality['overall_score']:.1%})")
-                        else:
-                            st.warning(f"⚠️ Low quality")
-        
-        with col_pay2:
-            if st.button("💳 Process Payment", use_container_width=True, type="primary"):
-                if not recipient or amount <= 0:
-                    st.error("❌ Fill all payment details")
-                elif 'payment_audio' not in st.session_state:
-                    st.error("❌ Record voice authorization")
-                elif amount > st.session_state.user_balance:
-                    st.error("❌ Insufficient balance")
-                else:
-                    with st.spinner("🧠 AI verifying..."):
-                        success, score, message = st.session_state.auth_engine.authenticate(
-                            st.session_state.current_user, 
-                            st.session_state.payment_audio
-                        )
-                        
-                        if success:
-                            transaction = {
-                                'user': st.session_state.current_user,
-                                'recipient': recipient,
-                                'amount': float(amount),
-                                'description': description,
-                                'voice_score': float(score),
-                                'status': 'completed'
-                            }
-                            st.session_state.auth_engine.db.log_transaction(transaction)
-                            
-                            st.session_state.user_balance -= amount
-                            
-                            user_data = st.session_state.auth_engine.db.get_user(st.session_state.current_user)
-                            user_data['balance'] = st.session_state.user_balance
-                            st.session_state.auth_engine.db.store_user(st.session_state.current_user, user_data)
-                            
-                            st.success(f"✅ Payment of ₹{amount:,.2f} sent!")
-                            st.success(message)
-                            st.balloons()
-                            
-                            del st.session_state.payment_audio
-                            time.sleep(2)
-                            st.rerun()
-                        else:
-                            st.error(message)
-                            st.warning("🔒 PAYMENT BLOCKED")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-        st.markdown("### 📊 Recent Activity")
-        
-        user_transactions = [t for t in st.session_state.db_transactions 
-                            if t['user'] == st.session_state.current_user]
-        
-        if user_transactions:
-            for trans in reversed(user_transactions[-5:]):
-                score = trans.get('voice_score', 0)
-                st.markdown(f"""
-                <div class="info-box">
-                    <strong>₹{trans['amount']:,.2f}</strong><br>
-                    To: {trans['recipient']}<br>
-                    <small>AI Score: {score:.1%}</small>
-                </div>
-                """, unsafe_allow_html=True)
+    def validate_payment_form(self):
+        if not self.recipient_input.text:
+            self.show_popup("Error", "Please enter recipient")
+            return False
+
+        try:
+            amount = float(self.amount_input.text)
+            if amount <= 0:
+                self.show_popup("Error", "Amount must be greater than 0")
+                return False
+
+            if amount > self.user_balance:
+                self.show_popup("Error", "Insufficient balance")
+                return False
+        except ValueError:
+            self.show_popup("Error", "Please enter valid amount")
+            return False
+
+        return True
+
+    def clear_payment_form(self):
+        self.recipient_input.text = ''
+        self.amount_input.text = ''
+        self.desc_input.text = ''
+
+    def reset_voice_button(self):
+        self.voice_btn.text = 'PAY NOW'
+        self.voice_btn.unbind(on_press=self.start_voice_auth)
+        self.voice_btn.unbind(on_release=self.stop_voice_auth)
+        self.voice_btn.bind(on_press=self.initiate_payment)
+        self.challenge_label.text = 'Click "Pay Now" to start verification'
+        self.challenge_label.color = (0.5, 0.5, 0.5, 1)
+
+    def update_transaction_history(self):
+        transactions = self.auth_engine.db.transaction_logs[-3:]
+
+        if transactions:
+            history_text = ""
+            for trans in reversed(transactions):
+                history_text += f"₹{trans['amount']:.2f} to {trans['recipient']}\n"
+            self.history_label.text = history_text.strip()
         else:
-            st.info("No transactions yet")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            self.history_label.text = "No recent transactions"
+
+    def show_success_popup(self, transaction):
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+
+        success_icon = Label(text='✓', font_size='60sp', color=(0.2, 0.7, 0.2, 1),
+                            size_hint=(1, None), height=80)
+        content.add_widget(success_icon)
+
+        success_text = Label(
+            text=f'Payment Successful!\n\n₹{transaction["amount"]:.2f} sent to\n{transaction["recipient"]}',
+            font_size='18sp',
+            halign='center'
+        )
+        content.add_widget(success_text)
+
+        ok_btn = PaytmButton(text='DONE', size_hint=(1, None), height=50)
+        content.add_widget(ok_btn)
+
+        popup = Popup(title='Success', content=content, size_hint=(0.85, 0.5))
+        ok_btn.bind(on_press=popup.dismiss)
+        popup.open()
+
+    def show_decline_popup(self, transaction, reason):
+        """Show payment declined popup with details"""
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+
+        # Decline icon
+        decline_icon = Label(text='✗', font_size='60sp', color=(0.9, 0.3, 0.3, 1),
+                            size_hint=(1, None), height=80)
+        content.add_widget(decline_icon)
+
+        # Main decline message
+        decline_title = Label(
+            text='Payment Declined',
+            font_size='24sp',
+            bold=True,
+            color=(0.9, 0.3, 0.3, 1),
+            size_hint=(1, None),
+            height=40
+        )
+        content.add_widget(decline_title)
+
+        # Transaction details card
+        details_card = PaytmCard(size_hint=(1, None), height=150)
+        details_box = BoxLayout(orientation='vertical', spacing=8, padding=10)
+
+        amount_label = Label(
+            text=f'Amount: ₹{transaction["amount"]:.2f}',
+            font_size='18sp',
+            bold=True,
+            color=(0.2, 0.2, 0.2, 1),
+            size_hint=(1, None),
+            height=30,
+            halign='left'
+        )
+        amount_label.bind(size=amount_label.setter('text_size'))
+        details_box.add_widget(amount_label)
+
+        recipient_label = Label(
+            text=f'To: {transaction["recipient"]}',
+            font_size='16sp',
+            color=(0.4, 0.4, 0.4, 1),
+            size_hint=(1, None),
+            height=25,
+            halign='left'
+        )
+        recipient_label.bind(size=recipient_label.setter('text_size'))
+        details_box.add_widget(recipient_label)
+
+        score_label = Label(
+            text=f'Voice Match Score: {transaction["voice_score"]:.2%}',
+            font_size='14sp',
+            color=(0.5, 0.5, 0.5, 1),
+            size_hint=(1, None),
+            height=25,
+            halign='left'
+        )
+        score_label.bind(size=score_label.setter('text_size'))
+        details_box.add_widget(score_label)
+
+        details_card.add_widget(details_box)
+        content.add_widget(details_card)
+
+        # Reason for decline
+        reason_card = PaytmCard(size_hint=(1, None), height=100)
+        reason_box = BoxLayout(orientation='vertical', spacing=5, padding=10)
+
+        reason_title = Label(
+            text='Reason:',
+            font_size='14sp',
+            bold=True,
+            color=(0.3, 0.3, 0.3, 1),
+            size_hint=(1, None),
+            height=20,
+            halign='left'
+        )
+        reason_title.bind(size=reason_title.setter('text_size'))
+        reason_box.add_widget(reason_title)
+
+        reason_text = Label(
+            text=reason,
+            font_size='15sp',
+            color=(0.5, 0.5, 0.5, 1),
+            size_hint=(1, None),
+            height=40,
+            halign='left'
+        )
+        reason_text.bind(size=reason_text.setter('text_size'))
+        reason_box.add_widget(reason_text)
+
+        reason_card.add_widget(reason_box)
+        content.add_widget(reason_card)
+
+        # Action buttons
+        button_box = BoxLayout(spacing=10, size_hint=(1, None), height=50)
+
+        retry_btn = PaytmButton(text='TRY AGAIN', size_hint=(0.5, 1))
+        retry_btn.bind(on_press=lambda x: popup.dismiss())
+        button_box.add_widget(retry_btn)
+
+        cancel_btn = Button(
+            text='CANCEL',
+            size_hint=(0.5, 1),
+            font_size='16sp',
+            bold=True,
+            background_normal='',
+            background_color=(0.9, 0.3, 0.3, 1),
+            color=(1, 1, 1, 1)
+        )
+        cancel_btn.bind(on_press=lambda x: (popup.dismiss(), self.clear_payment_form()))
+        button_box.add_widget(cancel_btn)
+
+        content.add_widget(button_box)
+
+        # Create popup
+        popup = Popup(
+            title='Transaction Failed',
+            content=content,
+            size_hint=(0.9, 0.7),
+            separator_color=(0.9, 0.3, 0.3, 1)
+        )
+
+        popup.open()
+
+    def logout(self, instance):
+        self.current_user = None
+        self.user_balance = 10000.00
+        self.manager.current = 'login'
+
+    def show_popup(self, title, message):
+        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        msg_label = Label(text=message, font_size='16sp')
+        content.add_widget(msg_label)
+        ok_btn = PaytmButton(text='OK', size_hint=(1, None), height=45)
+        content.add_widget(ok_btn)
+        popup = Popup(title=title, content=content, size_hint=(0.8, 0.3))
+        ok_btn.bind(on_press=popup.dismiss)
+        popup.open()
 
 
-# Main
-def main():
-    init_session_state()
-    
-    if st.session_state.page == 'login':
-        login_page()
-    elif st.session_state.page == 'register':
-        registration_page()
-    elif st.session_state.page == 'payment':
-        if st.session_state.current_user:
-            payment_page()
-        else:
-            st.session_state.page = 'login'
-            st.rerun()
+# Main Application
+class VoiceGuardApp(App):
+    def build(self):
+        # Initialize authentication engine
+        self.auth_engine = VoiceAuthenticationEngine()
+
+        # Create screen manager
+        sm = ScreenManager()
+
+        # Create screens
+        login_screen = LoginScreen(name='login')
+        login_screen.auth_engine = self.auth_engine
+
+        register_screen = RegistrationScreen(name='register')
+        register_screen.auth_engine = self.auth_engine
+
+        payment_screen = PaymentScreen(name='payment')
+        payment_screen.auth_engine = self.auth_engine
+
+        # Add screens
+        sm.add_widget(login_screen)
+        sm.add_widget(register_screen)
+        sm.add_widget(payment_screen)
+
+        return sm
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    VoiceGuardApp().run()
