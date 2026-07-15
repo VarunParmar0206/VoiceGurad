@@ -4,7 +4,7 @@
 
 ### Advanced Voice Biometric Authentication System for Faster Logins & Secure Digital Transactions
 
-VoiceGuard is an AI-powered desktop application that replaces traditional passwords and OTPs with secure **voice biometric authentication**. It combines modern machine learning, digital signal processing, anti-spoofing techniques, and encrypted biometric storage to provide a secure and seamless authentication experience.
+VoiceGuard is a desktop application that replaces traditional passwords and OTP-based authentication with secure voice biometric verification. It combines digital signal processing, voice feature extraction, replay attack detection, encrypted biometric storage, and modern authentication techniques to provide a secure and user-friendly login experience.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20Learning-red?logo=pytorch)
