@@ -33,6 +33,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("10000.00"), nullable=False
+    )
     daily_limit: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("50000.00"), nullable=False
     )

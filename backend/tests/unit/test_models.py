@@ -47,6 +47,7 @@ class TestModelMetadata:
             "display_name",
             "is_active",
             "is_locked",
+            "balance",
             "daily_limit",
             "created_at",
             "updated_at",
