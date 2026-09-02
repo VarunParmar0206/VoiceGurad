@@ -1,0 +1,11 @@
+Alembic migrations for VoiceGuard V2.
+
+Commands (run from ``backend/``):
+
+  alembic revision --autogenerate -m "description"
+  alembic upgrade head
+  alembic downgrade -1
+
+The environment (``env.py``) automatically rewrites the async
+``postgresql+asyncpg://`` URL from settings to a synchronous
+``postgresql+psycopg2://`` URL, so no password is committed here.
