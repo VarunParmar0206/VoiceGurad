@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voiceguard"
+version = "2.0.0"
+description = "VoiceGuard V2 — Voice-authenticated payments"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
