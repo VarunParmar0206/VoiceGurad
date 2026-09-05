@@ -10,6 +10,7 @@ from voiceguard.repositories.audit_repository import AuditLogRepository
 from voiceguard.repositories.auth_attempt_repository import AuthAttemptRepository
 from voiceguard.repositories.base import RepositoryBase
 from voiceguard.repositories.challenge_repository import ChallengeRepository
+from voiceguard.repositories.pending_login_repository import PendingLoginRepository
 from voiceguard.repositories.session_repository import SessionRepository
 from voiceguard.repositories.transaction_repository import TransactionRepository
 from voiceguard.repositories.user_repository import UserRepository
@@ -28,4 +29,5 @@ __all__ = [
     "AuditLogRepository",
     "ChallengeRepository",
     "AuthAttemptRepository",
+    "PendingLoginRepository",
 ]

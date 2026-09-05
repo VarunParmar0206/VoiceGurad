@@ -56,13 +56,17 @@ class TestAuthRoutes:
             body = r.json()
             assert body["error"] == "validation_error"
 
-    def test_login_voice_requires_uuid(self) -> None:
+    def test_login_voice_not_implemented(self) -> None:
         with _client() as c:
             r = c.post(
                 "/api/v1/auth/login-voice",
                 json={"user_id": "not-a-uuid", "challenge_id": str(uuid.uuid4())},
             )
-            assert r.status_code == 400
+            assert r.status_code == 200
+            body = r.json()
+            assert body["status"] == "not_implemented"
+            assert "access_token" not in body
+            assert "refresh_token" not in body
 
 
 class TestUsersRoutes:

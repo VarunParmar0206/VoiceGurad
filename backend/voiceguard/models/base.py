@@ -33,7 +33,7 @@ def _uuid_type() -> sa.types.TypeEngine[uuid.UUID]:
     return sa.Uuid()
 
 
-def _jsonb_type() -> sa.types.TypeEngine[dict]:
+def _jsonb_type() -> sa.types.TypeEngine[dict[str, object]]:
 
     return postgresql.JSONB().with_variant(sa.JSON(), "sqlite")
 

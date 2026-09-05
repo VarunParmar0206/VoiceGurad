@@ -23,6 +23,7 @@ from voiceguard.models.audit_log import AuditLog
 from voiceguard.models.auth_attempt import AuthAttempt
 from voiceguard.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from voiceguard.models.challenge import Challenge
+from voiceguard.models.pending_login import PendingLogin
 from voiceguard.models.session import Session
 from voiceguard.models.transaction import Transaction
 from voiceguard.models.user import User
@@ -48,6 +49,9 @@ User.sent_transactions = relationship(
 User.challenges = relationship(
     "Challenge", back_populates="user", cascade="all, delete-orphan"
 )
+User.pending_logins = relationship(
+    "PendingLogin", back_populates="user", cascade="all, delete-orphan"
+)
 
 VoiceTemplate.user = relationship("User", back_populates="voice_templates")
 VoiceTemplate.voice_models = relationship(
@@ -68,6 +72,8 @@ Transaction.recipient = relationship("User", foreign_keys=[Transaction.recipient
 
 Challenge.user = relationship("User", back_populates="challenges")
 
+PendingLogin.user = relationship("User", back_populates="pending_logins")
+
 configure_mappers()
 
 __all__ = [
@@ -82,4 +88,5 @@ __all__ = [
     "AuditLog",
     "Challenge",
     "AuthAttempt",
+    "PendingLogin",
 ]

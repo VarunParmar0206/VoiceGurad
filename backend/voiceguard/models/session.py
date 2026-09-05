@@ -49,10 +49,17 @@ class Session(UUIDPrimaryKeyMixin, Base):
 
     @property
     def is_active(self) -> bool:
-        """True if the session has not been revoked and has not expired."""
+        """True if the session has not been revoked and has not expired.
+
+        ``expires_at`` is compared in UTC; SQLite returns naive datetimes, so
+        a naive value is normalized to UTC before comparison.
+        """
         if self.revoked_at is not None:
             return False
-        return self.expires_at > datetime.now(UTC)
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        return expires > datetime.now(UTC)
 
     def __repr__(self) -> str:
         return f"<Session user={self.user_id} active={self.is_active}>"

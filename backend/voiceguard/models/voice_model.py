@@ -53,7 +53,7 @@ class VoiceTemplate(UUIDPrimaryKeyMixin, Base):
     model_version: Mapped[str] = mapped_column(String(32), nullable=False)
     template_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     enrollment_samples: Mapped[int] = mapped_column(Integer, nullable=False)
-    quality_scores: Mapped[dict | None] = mapped_column(_jsonb_type(), nullable=True)
+    quality_scores: Mapped[dict[str, object] | None] = mapped_column(_jsonb_type(), nullable=True)
     salt: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -88,7 +88,7 @@ class VoiceModel(UUIDPrimaryKeyMixin, Base):
     )
     model_type: Mapped[str] = mapped_column(String(32), nullable=False)
     model_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    parameters: Mapped[dict | None] = mapped_column(_jsonb_type(), nullable=True)
+    parameters: Mapped[dict[str, object] | None] = mapped_column(_jsonb_type(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

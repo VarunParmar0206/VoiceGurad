@@ -13,6 +13,10 @@ from voiceguard.schemas.auth import (
     RegisterResponse,
     TokenPairResponse,
     TokenRefreshRequest,
+    TOTPConfirmRequest,
+    TOTPLoginRequest,
+    TOTPSetupRequest,
+    TOTPSetupResponse,
 )
 from voiceguard.schemas.common import (
     ErrorResponse,
@@ -53,6 +57,10 @@ __all__ = [
     "RegisterResponse",
     "TokenPairResponse",
     "TokenRefreshRequest",
+    "TOTPConfirmRequest",
+    "TOTPLoginRequest",
+    "TOTPSetupRequest",
+    "TOTPSetupResponse",
     # Common
     "ErrorResponse",
     "PaginatedResponse",

@@ -44,12 +44,29 @@ class Settings(BaseSettings):
         ...,
         description="Secret key used to sign JWT access/refresh tokens.",
     )
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ISSUER: str = "voiceguard"
+    JWT_AUDIENCE: str = "voiceguard"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ENCRYPTION_KEY: str = Field(
         ...,
         description="Base64-encoded Fernet key for data-at-rest encryption.",
     )
+
+    # ── TOTP (backup / secondary MFA) ─────────────────────────────────────
+    TOTP_ISSUER: str = "VoiceGuard"
+    TOTP_CODE_DIGITS: int = 6
+    TOTP_SECRET_BYTES: int = 20  # 160-bit random key (20 bytes)
+    TOTP_WINDOW_STEPS: int = 1  # ±1 time-step tolerance for clock skew
+
+    # ── Session management ────────────────────────────────────────────────
+    CONCURRENT_SESSION_LIMIT: int = 3
+
+    # ── Two-step login ────────────────────────────────────────────────────
+    # Lifetime (seconds) of the server-side one-time login state issued after
+    # the password step and consumed by the secondary factor (TOTP).
+    PENDING_LOGIN_EXPIRE_SECONDS: int = 300
 
     # ── Audio / Feature Extraction ───────────────────────────────────────
     AUDIO_SAMPLE_RATE: int = 16000
@@ -93,6 +110,7 @@ class Settings(BaseSettings):
     # ── Account ──────────────────────────────────────────────────────────
     MAX_FAILED_ATTEMPTS: int = 5
     LOCKOUT_COOLDOWN_BASE_SECONDS: int = 30
+    LOCKOUT_COOLDOWN_MAX_SECONDS: int = 300
     DAILY_TRANSACTION_LIMIT: float = 50000.00
     DEFAULT_BALANCE: float = 10000.00
 
@@ -112,4 +130,4 @@ class Settings(BaseSettings):
 
 # Module-level singleton — import ``settings`` to access configuration.
 # The required fields are supplied via environment variables at runtime.
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()

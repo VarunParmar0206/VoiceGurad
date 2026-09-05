@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Numeric, String
+from sqlalchemy import Boolean, LargeBinary, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from voiceguard.models.base import (
@@ -33,6 +33,13 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     display_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Encrypted base32 TOTP secret (AES-256-GCM) — None until TOTP is set up.
+    totp_secret: Mapped[bytes | None] = mapped_column(
+        LargeBinary, nullable=True
+    )
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     balance: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), default=Decimal("10000.00"), nullable=False
     )

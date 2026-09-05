@@ -67,6 +67,60 @@ class LogoutRequest(BaseModel):
     )
 
 
+class TOTPSetupRequest(BaseModel):
+    """POST /api/v1/auth/totp/setup request body.
+
+    The user is derived from the authenticated JWT — the target is never
+    taken from a client-supplied ``user_id`` (prevents configuring another
+    account's TOTP).
+    """
+
+
+class TOTPSetupResponse(BaseModel):
+    """Response containing the one-time TOTP secret + provisioning URI."""
+
+    secret: str = Field(..., description="Base32 TOTP secret (shown once)")
+    otpauth_uri: str = Field(..., description="otpauth:// provisioning URI")
+
+
+class TOTPConfirmRequest(BaseModel):
+    """POST /api/v1/auth/totp/confirm request body.
+
+    The user is derived from the authenticated JWT — the target is never
+    taken from a client-supplied ``user_id`` (prevents enabling another
+    account's TOTP).
+    """
+
+    code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        description="6-digit TOTP code from the authenticator app",
+    )
+
+
+class TOTPLoginRequest(BaseModel):
+    """POST /api/v1/auth/login-totp request body (secondary factor).
+
+    The target user is derived **server-side** from the one-time
+    ``login_token`` issued by the password step — never from a
+    client-supplied ``user_id``.  This prevents pairing an arbitrary user's
+    UUID with a valid code without first completing that user's password step.
+    """
+
+    login_token: str = Field(
+        ..., description="One-time login state issued by the password step"
+    )
+    code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        pattern=r"^\d{6}$",
+        description="6-digit TOTP code",
+    )
+
+
 # ── Response schemas ─────────────────────────────────────────────────────
 
 
@@ -89,31 +143,50 @@ class RegisterResponse(BaseModel):
 
 
 class LoginPasswordResponse(BaseModel):
-    """POST /api/v1/auth/login-password response body (step 1 success)."""
+    """POST /api/v1/auth/login-password response body (step 1 success).
+
+    Returns the authenticated ``user_id`` (informational) plus a short-lived,
+    one-time ``login_token`` that the secondary-factor step (``login-totp``)
+    must present to complete authentication.  The token is server-side bound
+    to this user, so the secondary step never trusts a client-supplied UUID.
+    """
 
     status: str = Field(
         "password_verified",
         description="Status after password verification",
     )
     user_id: uuid.UUID = Field(..., description="Authenticated user ID")
+    login_token: str = Field(
+        ...,
+        description="One-time server-side login state consumed by the "
+        "secondary-factor step (expires shortly)",
+    )
+    requires_secondary: bool = Field(
+        True,
+        description="True if a secondary factor (TOTP/voice) is required "
+        "before tokens are issued",
+    )
 
 
 class LoginVoiceResponse(BaseModel):
-    """POST /api/v1/auth/login-voice response body."""
+    """POST /api/v1/auth/login-voice response body.
+
+    **Phase 4:** Voice biometric verification is NOT implemented until the
+    later ML phases.  This endpoint therefore never issues access/refresh
+    tokens.  ``status`` is one of ``not_implemented`` (primary), and this
+    schema is the envelope used to convey that the secondary factor is
+    unavailable.
+    """
 
     status: str = Field(
-        "authenticated", description="Authentication status"
+        "not_implemented",
+        description="Authentication status (voice is not yet implemented)",
     )
-    access_token: str | None = Field(None, description="JWT access token")
-    refresh_token: str | None = Field(None, description="Refresh token")
-    expires_in: int | None = Field(
-        None, description="Access token lifetime in seconds"
+    reason: str | None = Field(
+        None, description="Machine-readable reason (e.g. not_implemented)"
     )
-    voice_score: float | None = Field(
-        None, description="Voice verification score"
-    )
-    anti_spoof_score: float | None = Field(
-        None, description="Anti-spoofing composite score"
+    detail: str | None = Field(
+        None, description="Human-readable explanation"
     )
 
 

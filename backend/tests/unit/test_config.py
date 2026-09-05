@@ -14,7 +14,7 @@ def _make_env() -> dict[str, str]:
     return {
         "VG_DATABASE_URL": "postgresql+asyncpg://user:pass@localhost:5432/testdb",
         "VG_JWT_SECRET_KEY": "a-very-long-secret-key-for-jwt-signing-operations",
-        "VG_ENCRYPTION_KEY": "gAAAAABh0Z0TestKeyThatIsLongEnoughForFernetValidation!",
+        "VG_ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
     }
 
 
@@ -51,7 +51,7 @@ class TestSettingsRequired:
 
         env = _make_env()
         del env["VG_DATABASE_URL"]
-        with patch.dict(os.environ, env, clear=False), pytest.raises(ValidationError):
+        with patch.dict(os.environ, env, clear=True), pytest.raises(ValidationError):
             Settings()
 
     def test_missing_jwt_secret(self) -> None:
@@ -59,7 +59,7 @@ class TestSettingsRequired:
 
         env = _make_env()
         del env["VG_JWT_SECRET_KEY"]
-        with patch.dict(os.environ, env, clear=False), pytest.raises(ValidationError):
+        with patch.dict(os.environ, env, clear=True), pytest.raises(ValidationError):
             Settings()
 
     def test_missing_encryption_key(self) -> None:
@@ -67,7 +67,7 @@ class TestSettingsRequired:
 
         env = _make_env()
         del env["VG_ENCRYPTION_KEY"]
-        with patch.dict(os.environ, env, clear=False), pytest.raises(ValidationError):
+        with patch.dict(os.environ, env, clear=True), pytest.raises(ValidationError):
             Settings()
 
 

@@ -36,3 +36,18 @@ class UserRepository(RepositoryBase[User]):
             select(User.id).where(User.email == email)
         )
         return result.scalar_one_or_none() is not None
+
+    async def set_totp_secret(self, user: User, encrypted_secret: bytes) -> None:
+        """Persist an encrypted TOTP secret for a user."""
+        user.totp_secret = encrypted_secret
+        await self.session.flush()
+
+    async def set_totp_enabled(self, user: User, enabled: bool) -> None:
+        """Enable or disable TOTP for a user."""
+        user.totp_enabled = enabled
+        await self.session.flush()
+
+    async def set_locked(self, user: User, locked: bool) -> None:
+        """Set the account-lockout flag."""
+        user.is_locked = locked
+        await self.session.flush()

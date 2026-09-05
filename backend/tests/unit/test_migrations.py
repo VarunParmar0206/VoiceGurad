@@ -54,6 +54,7 @@ class TestMigrationOfflineSQL:
         assert "CREATE TABLE audit_log" in sql
         assert "CREATE TABLE challenges" in sql
         assert "CREATE TABLE auth_attempts" in sql
+        assert "CREATE TABLE pending_logins" in sql
 
     def test_amount_check_constraint_rendered(self) -> None:
         with patch.dict(os.environ, _env(), clear=False):

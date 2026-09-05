@@ -20,7 +20,7 @@ def _env() -> dict[str, str]:
     return {
         "VG_DATABASE_URL": "postgresql+asyncpg://u:p@localhost:5432/db",
         "VG_JWT_SECRET_KEY": "secret" * 10,
-        "VG_ENCRYPTION_KEY": "gAAAAAB" + "0" * 40,
+        "VG_ENCRYPTION_KEY": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         "VG_REDIS_URL": "redis://localhost:6379/0",
     }
 
@@ -53,7 +53,8 @@ class TestDbConfig:
         with patch.dict(os.environ, _env(), clear=False):
             from voiceguard.models import Base
 
-            assert len(Base.metadata.tables) == 8
+            assert len(Base.metadata.tables) == 9
+            assert "pending_logins" in Base.metadata.tables
 
 
 class TestRedis:

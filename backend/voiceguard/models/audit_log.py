@@ -51,7 +51,7 @@ class AuditLog(Base):
         index=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    event_detail: Mapped[dict | None] = mapped_column(_jsonb_type(), nullable=True)
+    event_detail: Mapped[dict[str, object] | None] = mapped_column(_jsonb_type(), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(_inet_type(), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

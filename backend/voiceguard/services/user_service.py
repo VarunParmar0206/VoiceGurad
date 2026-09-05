@@ -90,6 +90,30 @@ class UserService:
         await self._repo.update(user)
         return user
 
+    async def change_own_password(
+        self,
+        user: User,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Verify the current password, then hash and store a new one.
+
+        The new password is hashed with Argon2id before storage.
+
+        Raises:
+            ValueError: If *current_password* is wrong or *new_password*
+                does not meet minimum requirements.
+        """
+        from voiceguard.security.password import hash_password, verify_password
+
+        if not verify_password(current_password, user.password_hash):
+            raise ValueError("Current password is incorrect.")
+        if len(new_password) < 8:
+            raise ValueError("New password must be at least 8 characters.")
+        if new_password == current_password:
+            raise ValueError("New password must differ from the current password.")
+        await self.update_password(user, hash_password(new_password))
+
     async def get_balance(self, user: User) -> Decimal:
         return user.balance or Decimal("0.00")
 

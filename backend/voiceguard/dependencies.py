@@ -33,6 +33,7 @@ from voiceguard.security.rate_limit import (
     check_rate_limit,
     make_rate_limit_key,
 )
+from voiceguard.security.tokens import InvalidTokenError, decode_access_token
 
 # ── Database session ─────────────────────────────────────────────────────
 
@@ -189,42 +190,64 @@ async def rate_limit_transaction(
     return result
 
 
-# ── Auth context stub ────────────────────────────────────────────────────
+# ── Auth context (JWT verification) ──────────────────────────────────────
 
 
 @dataclass
 class AuthContext:
-    """Placeholder for authenticated user context.
+    """Authenticated user context derived from a JWT access token.
 
-    Phase 4 will implement JWT verification and populate this from
-    the Authorization header.  For now, it is a stub that can be
-    injected into routes without breaking the interface.
+    ``user_id`` is the authenticated user's UUID; ``is_authenticated`` is
+    ``True`` only when a valid, unexpired access token was presented.
     """
 
     user_id: UUID | None = None
     is_authenticated: bool = False
 
 
+def _bearer_token(request: Request) -> str | None:
+    """Extract the bearer token from the Authorization header.
+
+    Returns the raw token, or ``None`` if the header is absent or not
+    scheme ``Bearer``.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        return None
+    scheme, _, value = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not value.strip():
+        return None
+    return value.strip()
+
+
 async def get_auth_context(
     request: Request,
 ) -> AuthContext:
-    """Return auth context from the request.
+    """Resolve the auth context by verifying the JWT access token.
 
-    **Phase 3 stub:** Always returns an unauthenticated context.
-    Phase 4 will decode the JWT and return a populated AuthContext.
+    A missing, malformed, or expired token yields an unauthenticated
+    context (does not raise) so downstream logic can choose its behaviour.
     """
-    return AuthContext(user_id=None, is_authenticated=False)
+    token = _bearer_token(request)
+    if token is None:
+        return AuthContext(user_id=None, is_authenticated=False)
+    try:
+        claims = decode_access_token(token)
+    except InvalidTokenError:
+        return AuthContext(user_id=None, is_authenticated=False)
+    return AuthContext(user_id=claims.user_id, is_authenticated=True)
 
 
 async def require_auth(
     auth: Annotated[AuthContext, Depends(get_auth_context)],
 ) -> AuthContext:
-    """Dependency that requires an authenticated user.
+    """Dependency that requires a valid, authenticated access token.
 
-    **Phase 3 stub:** Always raises 401.
-    Phase 4 will verify the JWT before reaching this check.
+    Raises:
+        HTTPException 401: If the token is missing, invalid, or expired.
+            No internal error details are exposed.
     """
-    if not auth.is_authenticated:
+    if not auth.is_authenticated or auth.user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
