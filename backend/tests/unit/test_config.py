@@ -63,6 +63,11 @@ class TestSettingsDefaults:
         assert s.REPLAY_DETECTOR_N_MELS == 80
         assert isinstance(s.REPLAY_DETECTOR_CNN_CHANNELS, str)
         assert s.REPLAY_DETECTOR_DROPOUT >= 0.0
+        # ── Phase 8 deepfake detection ─────────────────────────
+        assert s.DEEPFAKE_DETECTION_THRESHOLD == 0.50
+        assert s.DEEPFAKE_DETECTOR_N_MELS == 80
+        assert isinstance(s.DEEPFAKE_DETECTOR_CNN_CHANNELS, str)
+        assert s.DEEPFAKE_DETECTOR_DROPOUT >= 0.0
 
 
 class TestSettingsRequired:

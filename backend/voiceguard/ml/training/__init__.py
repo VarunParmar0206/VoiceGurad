@@ -14,6 +14,14 @@ from voiceguard.ml.training.evaluate import (
     threshold_analysis,
 )
 from voiceguard.ml.training.losses import ArcFaceLoss, TripletLoss
+from voiceguard.ml.training.train_deepfake import (
+    DeepfakeTrainingConfig,
+    SyntheticDeepfakeDataset,
+    collate_deepfake_batch,
+)
+from voiceguard.ml.training.train_deepfake import (
+    run_training as run_deepfake_training,
+)
 from voiceguard.ml.training.train_replay import (
     ReplayTrainingConfig,
     SyntheticReplayDataset,
@@ -37,11 +45,14 @@ from voiceguard.ml.training.train_speaker import (
 
 __all__ = [
     "ArcFaceLoss",
+    "DeepfakeTrainingConfig",
     "ReplayTrainingConfig",
+    "SyntheticDeepfakeDataset",
     "SyntheticReplayDataset",
     "SyntheticSpeakerDataset",
     "TrainingConfig",
     "TripletLoss",
+    "collate_deepfake_batch",
     "collate_replay_batch",
     "collate_speaker_batch",
     "deserialize_model_state",
@@ -49,6 +60,7 @@ __all__ = [
     "eer",
     "load_checkpoint",
     "pairwise_similarity",
+    "run_deepfake_training",
     "run_replay_training",
     "run_training",
     "save_checkpoint",

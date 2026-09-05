@@ -14,14 +14,21 @@ Public entry points (Phase 6):
 
 Public entry points (Phase 7):
   - :mod:`voiceguard.voice.anti_spoofing` —— replay detection (Tier 1 + Tier 2)
+
+Public entry points (Phase 8):
+  - :mod:`voiceguard.voice.anti_spoofing` —— deepfake detection (Tier 1 + Tier 2)
 """
 
 from __future__ import annotations
 
 from voiceguard.voice.anti_spoofing import (
+    DeepfakeDetectionResult,
+    DeepfakeHeuristicScores,
     ReplayDetectionResult,
     ReplayHeuristicScores,
+    compute_deepfake_heuristic_scores,
     compute_heuristic_scores,
+    detect_deepfake,
     detect_replay,
 )
 from voiceguard.voice.cancelable import (
@@ -92,6 +99,8 @@ __all__ = [
     "AudioValidationError",
     "CanonicalWaveform",
     "DecodedAudio",
+    "DeepfakeDetectionResult",
+    "DeepfakeHeuristicScores",
     "DiagonalGaussianMixture",
     "EnrollmentProfile",
     "EnrollmentSample",
@@ -110,11 +119,13 @@ __all__ = [
     "VoiceActivityResult",
     "batch_inputs",
     "canonicalize",
+    "compute_deepfake_heuristic_scores",
     "compute_heuristic_scores",
     "decode_array",
     "decode_bytes",
     "decode_source",
     "derive_projection",
+    "detect_deepfake",
     "detect_replay",
     "embed_batch",
     "embed_result",
