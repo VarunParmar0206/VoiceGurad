@@ -80,13 +80,54 @@ class Settings(BaseSettings):
     F_MAX: int = 8000
     MEL_FLOOR: float = 1e-6  # additive floor in log(mel + floor)
 
-    # ── Speaker Verification ─────────────────────────────────────────────
+    # ── ML / Speaker Verification ────────────────────────────────────────
+    # Deterministic seed shared by model initialization and training.
+    SEED: int = 42
+    # Learner embedding dimensionality (architecture §6.2).
     EMBEDDING_DIM: int = 256
-    EMBEDDING_INPUT_DIM: int = 256
     ENROLLMENT_MIN_SAMPLES: int = 5
+    # Single base verification threshold (architecture §5.2).
+    #
+    # UNCALIBRATED DESIGN DEFAULT: this value is inherited from the design
+    # documents and has not been validated against real speaker data.
+    # Treat it as a placeholder until a real dataset permits EER/threshold
+    # calibration — it MUST NOT be cited as a production decision boundary.
     VERIFICATION_THRESHOLD: float = 0.82
+    # Scores in [threshold - CONFIDENCE_BAND, threshold) trigger a soft
+    # accept (request an additional sample) rather than a hard reject.
+    CONFIDENCE_BAND: float = 0.05
+    # Composite score weights (cosine / mahalanobis / gmm). Uncalibrated
+    # design defaults; distinct from graduated-threshold logic (removed).
+    COMPOSITE_WEIGHT_COSINE: float = 0.6
+    COMPOSITE_WEIGHT_MAHALANOBIS: float = 0.3
+    COMPOSITE_WEIGHT_GMM: float = 0.1
+    # Per-user adaptive-threshold behaviour (architecture §5.2): the margin
+    # added to the base threshold scales with (1 - intra-class consistency).
+    ENROLLMENT_ADAPTIVE_FACTOR: float = 0.05
+    ENROLLMENT_THRESHOLD_LOWER: float = 0.5
+    ENROLLMENT_THRESHOLD_UPPER: float = 0.95
+    # Per-user diagonal GMM (architecture §5.2/§24).  Fitted component count
+    # is clamped to the number of enrollment samples at fit time; synthetic
+    # models are scaffolding only — never claimed as validated.
     GMM_N_COMPONENTS: int = 8
     GMM_COVARIANCE_TYPE: str = "diag"
+    GMM_SCALE_COMPONENTS: bool = True  # clamp components to n_samples
+    # Statistical feature vector (Path B) dimensionality: 259 = 240 MFCC +
+    # 5 spectral + 2 zcr + 4 pitch + 2 rms + 6 formants.
+    STATISTICAL_FEATURE_DIM: int = 259
+    # Phase 6 adapter policy (architecture §6.2): mel T is capped/padded to
+    # at most ~300 frames (~3 s at 16 kHz / 160-hop).  Padding is zero-valued
+    # and excluded from attention via a time mask; statistics are computed on
+    # valid frames only.
+    MAX_EMBEDDING_FRAMES: int = 300
+    # Whether the adapter applies per-band mean/std normalization to mel
+    # columns.  The SAME policy must apply to enrollment and verification.
+    EMBEDDING_MEL_NORMALIZE: bool = True
+    # Cancelable-transform PBKDF2-HMAC-SHA256 iteration count.  A derivable
+    # design default; deploy-time tuning is expected.
+    CANCELABLE_PBKDF2_ITERATIONS: int = 100_000
+    CANCELABLE_KEY_BYTES: int = 32
+    CANCELABLE_SALT_BYTES: int = 16
     SESSION_TIMEOUT_SECONDS: int = 900  # 15 minutes
 
     # ── Audio Quality ────────────────────────────────────────────────────
@@ -125,6 +166,8 @@ class Settings(BaseSettings):
 
     # ── Model Registry ──────────────────────────────────────────────────
     MODEL_STORAGE_PATH: str = "models/"
+    # Current model/artifact version tag written into registry metadata.
+    MODEL_VERSION: str = "v1.0"
 
     @field_validator("ENCRYPTION_KEY")
     @classmethod

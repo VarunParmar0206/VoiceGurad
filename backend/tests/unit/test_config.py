@@ -41,6 +41,22 @@ class TestSettingsDefaults:
         assert s.MAX_FAILED_ATTEMPTS == 5
         assert s.CHALLENGE_EXPIRY_SECONDS == 30
         assert s.ANTI_SPOOF_THRESHOLD == 0.70
+        # ── Phase 6 speaker verification ─────────────────────────────
+        assert s.SEED == 42
+        assert s.MODEL_VERSION == "v1.0"
+        assert s.MAX_EMBEDDING_FRAMES == 300
+        assert s.CONFIDENCE_BAND == 0.05
+        assert s.ENROLLMENT_MIN_SAMPLES == 5
+        assert s.GMM_N_COMPONENTS == 8
+        assert s.STATISTICAL_FEATURE_DIM == 259
+        assert s.COMPOSITE_WEIGHT_COSINE == 0.6
+        assert s.COMPOSITE_WEIGHT_MAHALANOBIS == 0.3
+        assert s.COMPOSITE_WEIGHT_GMM == 0.1
+        assert s.ENROLLMENT_ADAPTIVE_FACTOR >= 0.0
+        assert s.ENROLLMENT_THRESHOLD_LOWER < s.ENROLLMENT_THRESHOLD_UPPER
+        assert s.CANCELABLE_SALT_BYTES == 16
+        assert s.CANCELABLE_PBKDF2_ITERATIONS == 100_000
+        assert s.CANCELABLE_KEY_BYTES >= 1
 
 
 class TestSettingsRequired:
