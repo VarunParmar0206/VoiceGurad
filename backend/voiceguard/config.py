@@ -168,6 +168,8 @@ class Settings(BaseSettings):
     DEEPFAKE_HEURISTIC_SMOOTHNESS_WEIGHT: float = 0.20
     DEEPFAKE_HEURISTIC_REGULARITY_WEIGHT: float = 0.20
     DEEPFAKE_HEURISTIC_CEPSTRAL_WEIGHT: float = 0.15
+    # Voice conversion detection (architecture §12)
+    VOICE_CONVERSION_DETECTION_THRESHOLD: float = 0.50
     CHALLENGE_EXPIRY_SECONDS: int = 30
     CHALLENGE_MAX_PER_MINUTE: int = 3
     WER_PASS_THRESHOLD: float = 0.2

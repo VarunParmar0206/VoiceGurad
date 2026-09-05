@@ -17,6 +17,9 @@ Public entry points (Phase 7):
 
 Public entry points (Phase 8):
   - :mod:`voiceguard.voice.anti_spoofing` —— deepfake detection (Tier 1 + Tier 2)
+
+Public entry points (Phase 9):
+  - :mod:`voiceguard.voice.anti_spoofing` —— voice-conversion detection (three-check heuristic)
 """
 
 from __future__ import annotations
@@ -26,10 +29,14 @@ from voiceguard.voice.anti_spoofing import (
     DeepfakeHeuristicScores,
     ReplayDetectionResult,
     ReplayHeuristicScores,
+    VoiceConversionDetectionResult,
+    VoiceConversionHeuristicScores,
     compute_deepfake_heuristic_scores,
     compute_heuristic_scores,
+    compute_voice_conversion_heuristic_scores,
     detect_deepfake,
     detect_replay,
+    detect_voice_conversion,
 )
 from voiceguard.voice.cancelable import (
     derive_projection,
@@ -117,16 +124,20 @@ __all__ = [
     "VerificationResult",
     "VerificationScores",
     "VoiceActivityResult",
+    "VoiceConversionDetectionResult",
+    "VoiceConversionHeuristicScores",
     "batch_inputs",
     "canonicalize",
     "compute_deepfake_heuristic_scores",
     "compute_heuristic_scores",
+    "compute_voice_conversion_heuristic_scores",
     "decode_array",
     "decode_bytes",
     "decode_source",
     "derive_projection",
     "detect_deepfake",
     "detect_replay",
+    "detect_voice_conversion",
     "embed_batch",
     "embed_result",
     "enroll",

@@ -68,6 +68,8 @@ class TestSettingsDefaults:
         assert s.DEEPFAKE_DETECTOR_N_MELS == 80
         assert isinstance(s.DEEPFAKE_DETECTOR_CNN_CHANNELS, str)
         assert s.DEEPFAKE_DETECTOR_DROPOUT >= 0.0
+        # ── Phase 9 voice conversion detection ─────────────────
+        assert s.VOICE_CONVERSION_DETECTION_THRESHOLD == 0.50
 
 
 class TestSettingsRequired:
