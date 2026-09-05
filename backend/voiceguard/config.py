@@ -75,8 +75,10 @@ class Settings(BaseSettings):
     N_MELS: int = 80
     HOP_LENGTH: int = 160
     N_FFT: int = 512
+    WIN_LENGTH: int = 512  # 0/absent not possible in pydantic; equals N_FFT default
     F_MIN: int = 50
     F_MAX: int = 8000
+    MEL_FLOOR: float = 1e-6  # additive floor in log(mel + floor)
 
     # ── Speaker Verification ─────────────────────────────────────────────
     EMBEDDING_DIM: int = 256
@@ -90,9 +92,16 @@ class Settings(BaseSettings):
     # ── Audio Quality ────────────────────────────────────────────────────
     MIN_AUDIO_DURATION_SECONDS: float = 0.5
     MAX_AUDIO_DURATION_SECONDS: float = 30.0
+    MAX_AUDIO_SAMPLES: int = 0  # 0 = computed from MAX_AUDIO_DURATION_SECONDS * sample_rate
     MIN_QUALITY_SCORE: float = 0.45
     VAD_ENERGY_THRESHOLD: float = 0.02
     PRE_EMPHASIS_COEFFICIENT: float = 0.97
+    PRE_EMPHASIS_ENABLED: bool = False  # Only enable for formant/LPC analysis paths
+    PEAK_TARGET_DBFS: float = -1.0
+    VAD_MIN_SPEECH_SECONDS: float = 0.5
+    VAD_SILENCE_MARGIN_SECONDS: float = 0.05
+    VAD_FILL_GAP_SECONDS: float = 0.15
+    SILENCE_FLOOR_DBFS: float = -40.0
 
     # ── Anti-Spoofing ────────────────────────────────────────────────────
     ANTI_SPOOF_THRESHOLD: float = 0.70
