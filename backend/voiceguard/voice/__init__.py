@@ -11,10 +11,19 @@ Public entry points (Phase 6):
   - :mod:`voiceguard.voice.embedding` —— FeatureResult → model adapter
   - :mod:`voiceguard.voice.verification` —— enrollment + verification
   - :mod:`voiceguard.voice.cancelable` —— cancelable biometric transform
+
+Public entry points (Phase 7):
+  - :mod:`voiceguard.voice.anti_spoofing` —— replay detection (Tier 1 + Tier 2)
 """
 
 from __future__ import annotations
 
+from voiceguard.voice.anti_spoofing import (
+    ReplayDetectionResult,
+    ReplayHeuristicScores,
+    compute_heuristic_scores,
+    detect_replay,
+)
 from voiceguard.voice.cancelable import (
     derive_projection,
     new_salt,
@@ -92,6 +101,8 @@ __all__ = [
     "ModelInput",
     "PreprocessedAudio",
     "QualityReport",
+    "ReplayDetectionResult",
+    "ReplayHeuristicScores",
     "StatisticalFeatures",
     "UnsupportedAudioError",
     "VerificationResult",
@@ -99,10 +110,12 @@ __all__ = [
     "VoiceActivityResult",
     "batch_inputs",
     "canonicalize",
+    "compute_heuristic_scores",
     "decode_array",
     "decode_bytes",
     "decode_source",
     "derive_projection",
+    "detect_replay",
     "embed_batch",
     "embed_result",
     "enroll",

@@ -57,6 +57,12 @@ class TestSettingsDefaults:
         assert s.CANCELABLE_SALT_BYTES == 16
         assert s.CANCELABLE_PBKDF2_ITERATIONS == 100_000
         assert s.CANCELABLE_KEY_BYTES >= 1
+        # ── Phase 7 anti-spoofing ───────────────────────────────
+        assert s.ANTI_SPOOF_THRESHOLD == 0.70
+        assert s.REPLAY_DETECTION_THRESHOLD == 0.90
+        assert s.REPLAY_DETECTOR_N_MELS == 80
+        assert isinstance(s.REPLAY_DETECTOR_CNN_CHANNELS, str)
+        assert s.REPLAY_DETECTOR_DROPOUT >= 0.0
 
 
 class TestSettingsRequired:

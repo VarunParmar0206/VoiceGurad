@@ -113,11 +113,17 @@ class CNNLSTMAttention(nn.Module):
         )
 
         # ── Projection + additive (Bahdanau) attention ──────────────────
-        self.projection = nn.Linear(projection_dim, projection_dim)
-        self.attn_w = nn.Linear(projection_dim, projection_dim, bias=False)
-        self.attn_v = nn.Parameter(torch.empty(projection_dim))
-        # Final embedding projection.
-        self.embed = nn.Linear(projection_dim, embedding_dim)
+        # Architecture §6.2: BiLSTM output (512) is projected to
+        # embedding_dim (256) via Linear + ReLU; attention operates in
+        # 256-dim space, not 512-dim.
+        self.projection = nn.Linear(projection_dim, embedding_dim)
+        self.projection_act = nn.ReLU(inplace=True)
+        self.attn_w = nn.Linear(embedding_dim, embedding_dim, bias=False)
+        self.attn_v = nn.Parameter(torch.empty(embedding_dim))
+        # Final embedding projection (identity-dim since attention already
+        # produces an embedding_dim vector, but a linear layer allows the
+        # model to learn a final transformation).
+        self.embed = nn.Linear(embedding_dim, embedding_dim)
 
         self._reset_attention_parameters()
 
@@ -209,7 +215,7 @@ class CNNLSTMAttention(nn.Module):
             x = x.contiguous()
 
         lstm_out, _ = self.lstm(x)  # (B, T', 512)
-        hidden = F.relu(self.projection(lstm_out))  # (B, T', 256)
+        hidden = self.projection_act(self.projection(lstm_out))  # (B, T', 256)
 
         # Additive attention: alpha = softmax_t( tanh(W_a h) . v )
         energy = torch.tanh(self.attn_w(hidden)) @ self.attn_v  # (B, T')
@@ -245,7 +251,7 @@ class CNNLSTMAttention(nn.Module):
             )
             x, _ = pad_packed_sequence(packed, batch_first=True, total_length=t_pooled)
             x = x.contiguous()
-        hidden = F.relu(self.projection(self.lstm(x)[0]))
+        hidden = self.projection_act(self.projection(self.lstm(x)[0]))
         energy = torch.tanh(self.attn_w(hidden)) @ self.attn_v
         if lengths is not None:
             pooled_len = _pooled_sequence_lengths(lengths)

@@ -40,3 +40,7 @@ class RegistryError(Phase6Error):
 
 class TrainingError(Phase6Error):
     """Training scaffold failed (dataset, checkpoint, or step)."""
+
+
+class AntiSpoofError(Phase6Error):
+    """Anti-spoofing / replay detection failed or produced invalid output."""

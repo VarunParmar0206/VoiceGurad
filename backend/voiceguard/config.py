@@ -147,6 +147,16 @@ class Settings(BaseSettings):
     # ── Anti-Spoofing ────────────────────────────────────────────────────
     ANTI_SPOOF_THRESHOLD: float = 0.70
     REPLAY_DETECTION_THRESHOLD: float = 0.90
+    # Replay detector ML model (architecture §10.2)
+    REPLAY_DETECTOR_N_MELS: int = 80
+    REPLAY_DETECTOR_CNN_CHANNELS: str = "32,64,128"
+    REPLAY_DETECTOR_DROPOUT: float = 0.3
+    # Heuristic weights (architecture §10.2 Tier 1)
+    REPLAY_HEURISTIC_SPECTRAL_WEIGHT: float = 0.25
+    REPLAY_HEURISTIC_NOISE_WEIGHT: float = 0.15
+    REPLAY_HEURISTIC_CHANNEL_WEIGHT: float = 0.20
+    REPLAY_HEURISTIC_TEMPORAL_WEIGHT: float = 0.25
+    REPLAY_HEURISTIC_AMPLITUDE_WEIGHT: float = 0.15
     CHALLENGE_EXPIRY_SECONDS: int = 30
     CHALLENGE_MAX_PER_MINUTE: int = 3
     WER_PASS_THRESHOLD: float = 0.2
